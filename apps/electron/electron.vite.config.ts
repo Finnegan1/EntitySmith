@@ -6,13 +6,20 @@ import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin()],
+    build: {
+      target: 'node22',
+    },
   },
   preload: {
     plugins: [externalizeDepsPlugin()],
+    build: {
+      target: 'node22',
+    },
   },
   renderer: {
     root: 'src/renderer',
     build: {
+      target: 'chrome130',
       rollupOptions: {
         input: 'src/renderer/index.html',
       },

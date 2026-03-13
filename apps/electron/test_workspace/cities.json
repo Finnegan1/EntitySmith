@@ -1,0 +1,13 @@
+{
+  "datasetName": "World Cities",
+  "description": "A sample dataset of major world cities with population and country data.",
+  "source": "https://example.com/cities",
+  "data": [
+    { "city": "Tokyo", "country": "Japan", "population": 13960000, "continent": "Asia" },
+    { "city": "Berlin", "country": "Germany", "population": 3645000, "continent": "Europe" },
+    { "city": "São Paulo", "country": "Brazil", "population": 12325000, "continent": "South America" },
+    { "city": "Lagos", "country": "Nigeria", "population": 15387639, "continent": "Africa" },
+    { "city": "New York", "country": "USA", "population": 8336817, "continent": "North America" },
+    { "city": "Sydney", "country": "Australia", "population": 5312000, "continent": "Oceania" }
+  ]
+}

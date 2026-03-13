@@ -1,0 +1,8 @@
+{
+  "label": "Architecture",
+  "position": 3,
+  "link": {
+    "type": "generated-index",
+    "description": "How the app is structured internally — the three Electron processes, the IPC layer, and state management."
+  }
+}

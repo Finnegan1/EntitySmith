@@ -1,0 +1,42 @@
+{
+  "datasetName": "Programming Languages",
+  "description": "Popular programming languages with their paradigm, year of creation, and creator.",
+  "source": "https://example.com/languages",
+  "data": [
+    {
+      "name": "Python",
+      "creator": "Guido van Rossum",
+      "year": 1991,
+      "paradigm": "multi-paradigm",
+      "typing": "dynamic"
+    },
+    {
+      "name": "TypeScript",
+      "creator": "Anders Hejlsberg",
+      "year": 2012,
+      "paradigm": "multi-paradigm",
+      "typing": "static"
+    },
+    {
+      "name": "Rust",
+      "creator": "Graydon Hoare",
+      "year": 2010,
+      "paradigm": "multi-paradigm",
+      "typing": "static"
+    },
+    {
+      "name": "Haskell",
+      "creator": "Simon Peyton Jones",
+      "year": 1990,
+      "paradigm": "functional",
+      "typing": "static"
+    },
+    {
+      "name": "Go",
+      "creator": "Robert Griesemer",
+      "year": 2009,
+      "paradigm": "multi-paradigm",
+      "typing": "static"
+    }
+  ]
+}

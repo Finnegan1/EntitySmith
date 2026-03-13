@@ -6,7 +6,13 @@
       "Bash(cd /Users/fynnborrmeister/Development/github.com/Finnegan1/knowledge-graph-creator && bun install 2>&1 | tail -5)",
       "Bash(bun add:*)",
       "Bash(cd /Users/fynnborrmeister/Development/github.com/Finnegan1/knowledge-graph-creator/apps/electron && bun run build 2>&1)",
-      "Bash(timeout 5 bun run preview 2>&1 || true)"
+      "Bash(timeout 5 bun run preview 2>&1 || true)",
+      "Bash(tree -L 3 -I 'node_modules' /Users/fynnborrmeister/Development/github.com/Finnegan1/knowledge-graph-creator 2>/dev/null || find /Users/fynnborrmeister/Development/github.com/Finnegan1/knowledge-graph-creator -maxdepth 3 -not -path '*/node_modules*' -type f -o -type d | grep -v node_modules | head -80)",
+      "Bash(cd /Users/fynnborrmeister/Development/github.com/Finnegan1/knowledge-graph-creator/apps/electron && bunx shadcn add sidebar table dialog input badge alert scroll-area sonner separator tooltip dropdown-menu --yes 2>&1 | tail -50)",
+      "Bash(bun run:*)",
+      "Bash(npx tsc:*)",
+      "Bash(bunx shadcn:*)",
+      "Bash(bun install:*)"
     ]
   }
 }
