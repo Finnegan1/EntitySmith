@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir -p /Users/fynnborrmeister/Development/github.com/Finnegan1/knowledge-graph-creator/apps/electron/src\nmkdir -p /Users/fynnborrmeister/Development/github.com/Finnegan1/knowledge-graph-creator/apps/web\nmkdir -p /Users/fynnborrmeister/Development/github.com/Finnegan1/knowledge-graph-creator/packages)",
+      "Bash(bunx create-turbo@latest . --package-manager bun 2>&1)",
+      "Bash(cd /Users/fynnborrmeister/Development/github.com/Finnegan1/knowledge-graph-creator && bun install 2>&1 | tail -5)",
+      "Bash(bun add:*)",
+      "Bash(cd /Users/fynnborrmeister/Development/github.com/Finnegan1/knowledge-graph-creator/apps/electron && bun run build 2>&1)",
+      "Bash(timeout 5 bun run preview 2>&1 || true)"
+    ]
+  }
+}
