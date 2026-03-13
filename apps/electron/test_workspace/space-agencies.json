@@ -1,0 +1,63 @@
+{
+  "datasetName": "Space Agencies",
+  "description": "Major civil space agencies and commercial launch providers used by the mission datasets.",
+  "source": "https://en.wikipedia.org/wiki/List_of_government_space_agencies",
+  "data": [
+    {
+      "agency_id": "nasa",
+      "agency_name": "NASA",
+      "country": "United States",
+      "founded_year": 1958,
+      "agency_type": "government",
+      "headquarters_city": "Washington, D.C."
+    },
+    {
+      "agency_id": "esa",
+      "agency_name": "European Space Agency",
+      "country": "Europe",
+      "founded_year": 1975,
+      "agency_type": "multinational",
+      "headquarters_city": "Paris"
+    },
+    {
+      "agency_id": "isro",
+      "agency_name": "Indian Space Research Organisation",
+      "country": "India",
+      "founded_year": 1969,
+      "agency_type": "government",
+      "headquarters_city": "Bengaluru"
+    },
+    {
+      "agency_id": "cnsa",
+      "agency_name": "China National Space Administration",
+      "country": "China",
+      "founded_year": 1993,
+      "agency_type": "government",
+      "headquarters_city": "Beijing"
+    },
+    {
+      "agency_id": "roscosmos",
+      "agency_name": "Roscosmos",
+      "country": "Russia",
+      "founded_year": 1992,
+      "agency_type": "government",
+      "headquarters_city": "Moscow"
+    },
+    {
+      "agency_id": "jaxa",
+      "agency_name": "Japan Aerospace Exploration Agency",
+      "country": "Japan",
+      "founded_year": 2003,
+      "agency_type": "government",
+      "headquarters_city": "Tokyo"
+    },
+    {
+      "agency_id": "spacex",
+      "agency_name": "SpaceX",
+      "country": "United States",
+      "founded_year": 2002,
+      "agency_type": "commercial",
+      "headquarters_city": "Hawthorne"
+    }
+  ]
+}

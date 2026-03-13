@@ -11,20 +11,33 @@ import { Input } from '@/components/ui/input'
 
 interface EdgeLabelDialogProps {
   open: boolean
+  initialValue?: string
+  title?: string
+  confirmLabel?: string
   onConfirm: (label: string) => void
   onCancel: () => void
 }
 
-export function EdgeLabelDialog({ open, onConfirm, onCancel }: EdgeLabelDialogProps) {
+export function EdgeLabelDialog({
+  open,
+  initialValue = '',
+  title = 'Name this connection',
+  confirmLabel = 'Add connection',
+  onConfirm,
+  onCancel
+}: EdgeLabelDialogProps) {
   const [label, setLabel] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (open) {
-      setLabel('')
-      setTimeout(() => inputRef.current?.focus(), 50)
+      setLabel(initialValue)
+      setTimeout(() => {
+        inputRef.current?.focus()
+        inputRef.current?.select()
+      }, 50)
     }
-  }, [open])
+  }, [open, initialValue])
 
   function handleConfirm() {
     const trimmed = label.trim()
@@ -41,7 +54,7 @@ export function EdgeLabelDialog({ open, onConfirm, onCancel }: EdgeLabelDialogPr
     <Dialog open={open} onOpenChange={(v) => !v && onCancel()}>
       <DialogContent className="sm:max-w-[360px]">
         <DialogHeader>
-          <DialogTitle>Name this connection</DialogTitle>
+          <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
         <div className="py-2">
           <Input
@@ -58,7 +71,7 @@ export function EdgeLabelDialog({ open, onConfirm, onCancel }: EdgeLabelDialogPr
             Cancel
           </Button>
           <Button onClick={handleConfirm} disabled={!label.trim()}>
-            Add connection
+            {confirmLabel}
           </Button>
         </DialogFooter>
       </DialogContent>

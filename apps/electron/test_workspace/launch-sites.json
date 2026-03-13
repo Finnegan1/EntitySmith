@@ -1,0 +1,79 @@
+{
+  "datasetName": "Orbital Launch Sites",
+  "description": "Active orbital launch pads and ranges used by recent missions in this workspace.",
+  "source": "https://en.wikipedia.org/wiki/List_of_rocket_launch_sites",
+  "data": [
+    {
+      "launch_site_id": "ksc_lc39a",
+      "launch_site_name": "Kennedy Space Center LC-39A",
+      "country": "United States",
+      "operator_agency_id": "nasa",
+      "latitude": 28.608,
+      "longitude": -80.604,
+      "site_type": "coastal"
+    },
+    {
+      "launch_site_id": "ksc_lc39b",
+      "launch_site_name": "Kennedy Space Center LC-39B",
+      "country": "United States",
+      "operator_agency_id": "nasa",
+      "latitude": 28.627,
+      "longitude": -80.621,
+      "site_type": "coastal"
+    },
+    {
+      "launch_site_id": "ccsfs_slc40",
+      "launch_site_name": "Cape Canaveral SLC-40",
+      "country": "United States",
+      "operator_agency_id": "spacex",
+      "latitude": 28.562,
+      "longitude": -80.577,
+      "site_type": "coastal"
+    },
+    {
+      "launch_site_id": "sdsc_shar",
+      "launch_site_name": "Satish Dhawan Space Centre SHAR",
+      "country": "India",
+      "operator_agency_id": "isro",
+      "latitude": 13.719,
+      "longitude": 80.231,
+      "site_type": "coastal"
+    },
+    {
+      "launch_site_id": "csg_ela3",
+      "launch_site_name": "Guiana Space Centre ELA-3",
+      "country": "French Guiana",
+      "operator_agency_id": "esa",
+      "latitude": 5.236,
+      "longitude": -52.775,
+      "site_type": "equatorial"
+    },
+    {
+      "launch_site_id": "wenchang_lc101",
+      "launch_site_name": "Wenchang LC-101",
+      "country": "China",
+      "operator_agency_id": "cnsa",
+      "latitude": 19.614,
+      "longitude": 110.951,
+      "site_type": "coastal"
+    },
+    {
+      "launch_site_id": "baikonur_lc31",
+      "launch_site_name": "Baikonur LC-31/6",
+      "country": "Kazakhstan",
+      "operator_agency_id": "roscosmos",
+      "latitude": 45.996,
+      "longitude": 63.564,
+      "site_type": "inland"
+    },
+    {
+      "launch_site_id": "tanegashima_y1",
+      "launch_site_name": "Tanegashima Yoshinobu LP-1",
+      "country": "Japan",
+      "operator_agency_id": "jaxa",
+      "latitude": 30.401,
+      "longitude": 130.976,
+      "site_type": "island"
+    }
+  ]
+}

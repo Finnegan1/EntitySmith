@@ -16,9 +16,15 @@ interface RdfGraphState {
   edges: Edge[]
   canvasNodeIds: Set<string>
   pendingConnection: PendingConnection | null
+  renamingEdgeId: string | null
   onNodesChange: OnNodesChange<Node<RdfNodeData>>
   onEdgesChange: OnEdgesChange
   addDatasetNode: (filePath: string, datasetName: string, attributes: string[], position: { x: number; y: number }) => void
+  deleteNode: (nodeId: string) => void
+  deleteEdge: (edgeId: string) => void
+  startRenameEdge: (edgeId: string) => void
+  confirmRenameEdge: (label: string) => void
+  cancelRenameEdge: () => void
   confirmConnection: (label: string) => void
   cancelConnection: () => void
   setPendingConnection: (connection: PendingConnection | null) => void
@@ -31,6 +37,7 @@ export function useRdfGraphState(): RdfGraphState {
   const [nodes, setNodes] = useState<Node<RdfNodeData>[]>([])
   const [edges, setEdges] = useState<Edge[]>([])
   const [pendingConnection, setPendingConnection] = useState<PendingConnection | null>(null)
+  const [renamingEdgeId, setRenamingEdgeId] = useState<string | null>(null)
 
   const canvasNodeIds = new Set(nodes.map((n) => n.id))
 
@@ -56,6 +63,34 @@ export function useRdfGraphState(): RdfGraphState {
     },
     []
   )
+
+  const deleteNode = useCallback((nodeId: string) => {
+    setNodes((nds) => nds.filter((n) => n.id !== nodeId))
+    setEdges((eds) => eds.filter((e) => e.source !== nodeId && e.target !== nodeId))
+  }, [])
+
+  const deleteEdge = useCallback((edgeId: string) => {
+    setEdges((eds) => eds.filter((e) => e.id !== edgeId))
+  }, [])
+
+  const startRenameEdge = useCallback((edgeId: string) => {
+    setRenamingEdgeId(edgeId)
+  }, [])
+
+  const confirmRenameEdge = useCallback(
+    (label: string) => {
+      if (!renamingEdgeId) return
+      setEdges((eds) =>
+        eds.map((e) => (e.id === renamingEdgeId ? { ...e, label } : e))
+      )
+      setRenamingEdgeId(null)
+    },
+    [renamingEdgeId]
+  )
+
+  const cancelRenameEdge = useCallback(() => {
+    setRenamingEdgeId(null)
+  }, [])
 
   const onConnect = useCallback((connection: Connection) => {
     setPendingConnection({
@@ -100,9 +135,15 @@ export function useRdfGraphState(): RdfGraphState {
     edges,
     canvasNodeIds,
     pendingConnection,
+    renamingEdgeId,
     onNodesChange,
     onEdgesChange,
     addDatasetNode,
+    deleteNode,
+    deleteEdge,
+    startRenameEdge,
+    confirmRenameEdge,
+    cancelRenameEdge,
     confirmConnection,
     cancelConnection,
     setPendingConnection,

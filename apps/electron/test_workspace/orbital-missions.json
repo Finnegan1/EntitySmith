@@ -1,0 +1,95 @@
+{
+  "datasetName": "Orbital and Lunar Missions",
+  "description": "Recent flagship missions that can be linked to agencies, launch vehicles, and launch sites.",
+  "source": "https://en.wikipedia.org/wiki/2020_in_spaceflight",
+  "data": [
+    {
+      "mission_id": "artemis_i",
+      "mission_name": "Artemis I",
+      "mission_agency_id": "nasa",
+      "vehicle_id": "sls_block1",
+      "launch_site_id": "ksc_lc39b",
+      "launch_date": "2022-11-16",
+      "mission_category": "lunar_flyby",
+      "target_body": "Moon",
+      "outcome": "success"
+    },
+    {
+      "mission_id": "crew1",
+      "mission_name": "Crew-1",
+      "mission_agency_id": "nasa",
+      "vehicle_id": "falcon9_block5",
+      "launch_site_id": "ksc_lc39a",
+      "launch_date": "2020-11-16",
+      "mission_category": "crew_transport",
+      "target_body": "Low Earth Orbit",
+      "outcome": "success"
+    },
+    {
+      "mission_id": "chandrayaan3",
+      "mission_name": "Chandrayaan-3",
+      "mission_agency_id": "isro",
+      "vehicle_id": "lvm3",
+      "launch_site_id": "sdsc_shar",
+      "launch_date": "2023-07-14",
+      "mission_category": "lunar_lander",
+      "target_body": "Moon",
+      "outcome": "success"
+    },
+    {
+      "mission_id": "juice",
+      "mission_name": "JUICE",
+      "mission_agency_id": "esa",
+      "vehicle_id": "ariane5_eca",
+      "launch_site_id": "csg_ela3",
+      "launch_date": "2023-04-14",
+      "mission_category": "planetary_science",
+      "target_body": "Jupiter System",
+      "outcome": "success"
+    },
+    {
+      "mission_id": "tianwen1",
+      "mission_name": "Tianwen-1",
+      "mission_agency_id": "cnsa",
+      "vehicle_id": "longmarch5",
+      "launch_site_id": "wenchang_lc101",
+      "launch_date": "2020-07-23",
+      "mission_category": "mars_exploration",
+      "target_body": "Mars",
+      "outcome": "success"
+    },
+    {
+      "mission_id": "soyuz_ms24",
+      "mission_name": "Soyuz MS-24",
+      "mission_agency_id": "roscosmos",
+      "vehicle_id": "soyuz21a",
+      "launch_site_id": "baikonur_lc31",
+      "launch_date": "2023-09-15",
+      "mission_category": "crew_transport",
+      "target_body": "Low Earth Orbit",
+      "outcome": "success"
+    },
+    {
+      "mission_id": "slim",
+      "mission_name": "SLIM",
+      "mission_agency_id": "jaxa",
+      "vehicle_id": "h2a_202",
+      "launch_site_id": "tanegashima_y1",
+      "launch_date": "2023-09-06",
+      "mission_category": "lunar_lander",
+      "target_body": "Moon",
+      "outcome": "success"
+    },
+    {
+      "mission_id": "transporter8",
+      "mission_name": "Transporter-8",
+      "mission_agency_id": "spacex",
+      "vehicle_id": "falcon9_block5",
+      "launch_site_id": "ccsfs_slc40",
+      "launch_date": "2023-06-12",
+      "mission_category": "rideshare",
+      "target_body": "Sun-Synchronous Orbit",
+      "outcome": "success"
+    }
+  ]
+}

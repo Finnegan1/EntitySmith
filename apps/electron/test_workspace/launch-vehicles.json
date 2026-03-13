@@ -1,0 +1,70 @@
+{
+  "datasetName": "Orbital Launch Vehicles",
+  "description": "Launch vehicle families used by the missions dataset, with payload capability and operational status.",
+  "source": "https://en.wikipedia.org/wiki/Comparison_of_orbital_launch_systems",
+  "data": [
+    {
+      "vehicle_id": "falcon9_block5",
+      "vehicle_name": "Falcon 9 Block 5",
+      "operator_agency_id": "spacex",
+      "first_flight_date": "2018-05-11",
+      "payload_to_leo_kg": 22800,
+      "reusable": true,
+      "status": "active"
+    },
+    {
+      "vehicle_id": "sls_block1",
+      "vehicle_name": "Space Launch System Block 1",
+      "operator_agency_id": "nasa",
+      "first_flight_date": "2022-11-16",
+      "payload_to_leo_kg": 95000,
+      "reusable": false,
+      "status": "active"
+    },
+    {
+      "vehicle_id": "lvm3",
+      "vehicle_name": "LVM3",
+      "operator_agency_id": "isro",
+      "first_flight_date": "2014-12-18",
+      "payload_to_leo_kg": 10000,
+      "reusable": false,
+      "status": "active"
+    },
+    {
+      "vehicle_id": "ariane5_eca",
+      "vehicle_name": "Ariane 5 ECA",
+      "operator_agency_id": "esa",
+      "first_flight_date": "2002-12-11",
+      "payload_to_leo_kg": 21650,
+      "reusable": false,
+      "status": "retired"
+    },
+    {
+      "vehicle_id": "longmarch5",
+      "vehicle_name": "Long March 5",
+      "operator_agency_id": "cnsa",
+      "first_flight_date": "2016-11-03",
+      "payload_to_leo_kg": 25000,
+      "reusable": false,
+      "status": "active"
+    },
+    {
+      "vehicle_id": "soyuz21a",
+      "vehicle_name": "Soyuz-2.1a",
+      "operator_agency_id": "roscosmos",
+      "first_flight_date": "2004-11-08",
+      "payload_to_leo_kg": 8200,
+      "reusable": false,
+      "status": "active"
+    },
+    {
+      "vehicle_id": "h2a_202",
+      "vehicle_name": "H-IIA 202",
+      "operator_agency_id": "jaxa",
+      "first_flight_date": "2001-08-29",
+      "payload_to_leo_kg": 15000,
+      "reusable": false,
+      "status": "retired"
+    }
+  ]
+}
