@@ -1,0 +1,117 @@
+import { createContext, useCallback, useContext, useState } from 'react'
+import {
+  type Node,
+  type Edge,
+  type OnNodesChange,
+  type OnEdgesChange,
+  applyNodeChanges,
+  applyEdgeChanges,
+  addEdge,
+  type Connection
+} from '@xyflow/react'
+import type { RdfNodeData, PendingConnection } from '@/types'
+
+interface RdfGraphState {
+  nodes: Node<RdfNodeData>[]
+  edges: Edge[]
+  canvasNodeIds: Set<string>
+  pendingConnection: PendingConnection | null
+  onNodesChange: OnNodesChange<Node<RdfNodeData>>
+  onEdgesChange: OnEdgesChange
+  addDatasetNode: (filePath: string, datasetName: string, attributes: string[], position: { x: number; y: number }) => void
+  confirmConnection: (label: string) => void
+  cancelConnection: () => void
+  setPendingConnection: (connection: PendingConnection | null) => void
+  onConnect: (connection: Connection) => void
+}
+
+export const RdfGraphContext = createContext<RdfGraphState | null>(null)
+
+export function useRdfGraphState(): RdfGraphState {
+  const [nodes, setNodes] = useState<Node<RdfNodeData>[]>([])
+  const [edges, setEdges] = useState<Edge[]>([])
+  const [pendingConnection, setPendingConnection] = useState<PendingConnection | null>(null)
+
+  const canvasNodeIds = new Set(nodes.map((n) => n.id))
+
+  const onNodesChange: OnNodesChange<Node<RdfNodeData>> = useCallback(
+    (changes) => setNodes((nds) => applyNodeChanges(changes, nds)),
+    []
+  )
+
+  const onEdgesChange: OnEdgesChange = useCallback(
+    (changes) => setEdges((eds) => applyEdgeChanges(changes, eds)),
+    []
+  )
+
+  const addDatasetNode = useCallback(
+    (filePath: string, datasetName: string, attributes: string[], position: { x: number; y: number }) => {
+      const newNode: Node<RdfNodeData> = {
+        id: filePath,
+        type: 'dataset',
+        position,
+        data: { datasetName, attributes, filePath }
+      }
+      setNodes((nds) => [...nds, newNode])
+    },
+    []
+  )
+
+  const onConnect = useCallback((connection: Connection) => {
+    setPendingConnection({
+      source: connection.source,
+      sourceHandle: connection.sourceHandle ?? null,
+      target: connection.target,
+      targetHandle: connection.targetHandle ?? null
+    })
+  }, [])
+
+  const confirmConnection = useCallback(
+    (label: string) => {
+      if (!pendingConnection) return
+      const newEdge: Edge = {
+        id: `${pendingConnection.source}-${pendingConnection.sourceHandle ?? ''}-${pendingConnection.target}-${pendingConnection.targetHandle ?? ''}-${Date.now()}`,
+        source: pendingConnection.source,
+        sourceHandle: pendingConnection.sourceHandle,
+        target: pendingConnection.target,
+        targetHandle: pendingConnection.targetHandle,
+        label,
+        type: 'smoothstep',
+        animated: false,
+        style: { stroke: '#6366f1', strokeWidth: 2 },
+        labelStyle: { fill: '#e2e8f0', fontWeight: 600, fontSize: 11 },
+        labelBgStyle: { fill: '#1e293b', stroke: '#334155' },
+        labelBgPadding: [6, 3] as [number, number],
+        labelBgBorderRadius: 4,
+        markerEnd: { type: 'arrowclosed' as const, color: '#6366f1' }
+      }
+      setEdges((eds) => addEdge(newEdge, eds))
+      setPendingConnection(null)
+    },
+    [pendingConnection]
+  )
+
+  const cancelConnection = useCallback(() => {
+    setPendingConnection(null)
+  }, [])
+
+  return {
+    nodes,
+    edges,
+    canvasNodeIds,
+    pendingConnection,
+    onNodesChange,
+    onEdgesChange,
+    addDatasetNode,
+    confirmConnection,
+    cancelConnection,
+    setPendingConnection,
+    onConnect
+  }
+}
+
+export function useRdfGraph(): RdfGraphState {
+  const ctx = useContext(RdfGraphContext)
+  if (!ctx) throw new Error('useRdfGraph must be used within RdfGraphContext.Provider')
+  return ctx
+}

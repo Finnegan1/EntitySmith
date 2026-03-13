@@ -8,6 +8,7 @@ import { RdfView } from '@/components/rdf-view'
 import { WelcomeScreen } from '@/components/welcome-screen'
 import { WorkspaceContext, useWorkspacesState, useWorkspaces } from '@/hooks/use-workspaces'
 import { DatasetContext, useDatasetState, useDataset } from '@/hooks/use-dataset'
+import { RdfGraphContext, useRdfGraphState } from '@/hooks/use-rdf-graph'
 
 function KeyboardSave() {
   const { selectedFilePath } = useWorkspaces()
@@ -58,7 +59,7 @@ function AppInner() {
 
         {activeProject ? (
           <div className="flex flex-1 overflow-hidden">
-            <DatasetSidebar />
+            <DatasetSidebar activeTab={activeTab} />
             <Separator orientation="vertical" />
             <main className="flex-1 overflow-hidden">
               {activeTab === 'data' ? <DatasetView /> : <RdfView />}
@@ -78,11 +79,14 @@ function AppInner() {
 export function App() {
   const workspaceValue = useWorkspacesState()
   const datasetValue = useDatasetState()
+  const rdfGraphValue = useRdfGraphState()
 
   return (
     <WorkspaceContext.Provider value={workspaceValue}>
       <DatasetContext.Provider value={datasetValue}>
-        <AppInner />
+        <RdfGraphContext.Provider value={rdfGraphValue}>
+          <AppInner />
+        </RdfGraphContext.Provider>
       </DatasetContext.Provider>
     </WorkspaceContext.Provider>
   )

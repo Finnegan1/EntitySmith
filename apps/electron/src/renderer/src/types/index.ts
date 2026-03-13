@@ -41,3 +41,18 @@ export interface RawFileResult {
   content: string | null
   isMarkdown: boolean
 }
+
+// RDF Graph types
+export interface RdfNodeData {
+  datasetName: string
+  attributes: string[]
+  filePath: string
+  [key: string]: unknown
+}
+
+export interface PendingConnection {
+  source: string
+  sourceHandle: string | null
+  target: string
+  targetHandle: string | null
+}
