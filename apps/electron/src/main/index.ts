@@ -1,22 +1,55 @@
-import { app, BrowserWindow, shell } from 'electron'
+import { app, BrowserWindow, shell, Menu, dialog } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import { registerIpcHandlers } from './ipc/handlers'
 
+let mainWindow: BrowserWindow | null = null
+
+function buildMenu(): void {
+  const fileSubmenu: Electron.MenuItemConstructorOptions[] = [
+    {
+      label: 'Open Folder…',
+      accelerator: 'CmdOrCtrl+O',
+      async click() {
+        if (!mainWindow) return
+        const result = await dialog.showOpenDialog(mainWindow, {
+          properties: ['openDirectory'],
+        })
+        if (!result.canceled && result.filePaths.length > 0) {
+          mainWindow.webContents.send('menu:openProject', result.filePaths[0])
+        }
+      },
+    },
+    { type: 'separator' },
+    { role: 'quit' },
+  ]
+
+  const template: Electron.MenuItemConstructorOptions[] = [
+    { role: 'appMenu' },
+    { label: 'File', submenu: fileSubmenu },
+    { role: 'editMenu' },
+    { role: 'viewMenu' },
+    { role: 'windowMenu' },
+  ]
+
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template))
+}
+
 function createWindow(): void {
-  const mainWindow = new BrowserWindow({
-    width: 1200,
+  mainWindow = new BrowserWindow({
+    width: 1280,
     height: 800,
     show: false,
-    autoHideMenuBar: true,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
     },
   })
 
+  buildMenu()
+
   mainWindow.on('ready-to-show', () => {
-    mainWindow.show()
+    mainWindow!.show()
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {

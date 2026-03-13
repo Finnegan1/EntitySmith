@@ -6,14 +6,18 @@ import { DatasetTableToolbar } from '@/components/dataset-table/dataset-table-to
 import { useDataset } from '@/hooks/use-dataset'
 
 export function DatasetView() {
-  const { selectedFilePath, workspaces } = useWorkspaces()
+  const { selectedFilePath, activeProject } = useWorkspaces()
   const { dataset } = useDataset()
 
-  if (!selectedFilePath) return null
+  if (!selectedFilePath) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <p className="text-sm text-muted-foreground">Select a dataset from the sidebar</p>
+      </div>
+    )
+  }
 
-  const workspaceFile = workspaces
-    .flatMap((w) => w.files)
-    .find((f) => f.path === selectedFilePath)
+  const workspaceFile = activeProject?.files.find((f) => f.path === selectedFilePath)
 
   if (!workspaceFile) return null
 

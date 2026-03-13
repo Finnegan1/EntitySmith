@@ -1,20 +1,12 @@
 import { FolderOpen, Folder, ChevronRight, Database } from 'lucide-react'
 import { useWorkspaces } from '@/hooks/use-workspaces'
-import { useDataset } from '@/hooks/use-dataset'
+
+function basename(p: string): string {
+  return p.replace(/\\/g, '/').split('/').filter(Boolean).pop() ?? p
+}
 
 export function WelcomeScreen() {
-  const { workspaces, addWorkspace, selectFile } = useWorkspaces()
-  const { setDataset } = useDataset()
-
-  function openWorkspace(wsPath: string) {
-    const ws = workspaces.find((w) => w.path === wsPath)
-    if (!ws) return
-    const first = ws.files.find((f) => f.status === 'valid') ?? ws.files[0]
-    if (first) {
-      selectFile(first.path)
-      setDataset(first.dataset)
-    }
-  }
+  const { recentPaths, openProject, openProjectDialog } = useWorkspaces()
 
   return (
     <div className="flex h-full items-start justify-center overflow-auto bg-background pt-24">
@@ -31,13 +23,13 @@ export function WelcomeScreen() {
         </div>
 
         {/* Start */}
-        <div className="space-y-1.5">
+        <div>
           <p className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
             Start
           </p>
           <button
-            onClick={addWorkspace}
-            className="group flex w-full items-center gap-3 rounded px-2 py-2 text-sm hover:bg-accent transition-colors"
+            onClick={openProjectDialog}
+            className="flex w-full items-center gap-3 rounded px-2 py-2 text-sm hover:bg-accent transition-colors"
           >
             <FolderOpen className="h-4 w-4 shrink-0 text-muted-foreground" />
             <span>Open Folder…</span>
@@ -48,37 +40,37 @@ export function WelcomeScreen() {
         </div>
 
         {/* Recent */}
-        <div className="space-y-1.5">
+        <div>
           <p className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
             Recent
           </p>
-          {workspaces.length === 0 ? (
-            <div className="rounded border border-dashed border-border px-4 py-8 text-center">
+          {recentPaths.length === 0 ? (
+            <div className="rounded border border-dashed border-border px-4 py-10 text-center">
               <p className="text-sm text-muted-foreground">No recent projects</p>
               <button
-                onClick={addWorkspace}
+                onClick={openProjectDialog}
                 className="mt-3 text-xs text-primary hover:underline"
               >
                 Open a folder to get started
               </button>
             </div>
           ) : (
-            workspaces.map((ws) => (
-              <button
-                key={ws.path}
-                onClick={() => openWorkspace(ws.path)}
-                className="group flex w-full items-center gap-3 rounded px-2 py-2 text-left text-sm hover:bg-accent transition-colors"
-              >
-                <Folder className="h-4 w-4 shrink-0 text-primary/70" />
-                <div className="min-w-0 flex-1">
-                  <span className="block truncate font-medium">{ws.name}</span>
-                  <span className="block truncate font-mono text-[11px] text-muted-foreground">
-                    {ws.path}
-                  </span>
-                </div>
-                <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
-              </button>
-            ))
+            <div className="space-y-0.5">
+              {recentPaths.map((p) => (
+                <button
+                  key={p}
+                  onClick={() => openProject(p)}
+                  className="group flex w-full items-center gap-3 rounded px-2 py-2 text-left text-sm hover:bg-accent transition-colors"
+                >
+                  <Folder className="h-4 w-4 shrink-0 text-primary/70" />
+                  <div className="min-w-0 flex-1">
+                    <span className="block truncate font-medium">{basename(p)}</span>
+                    <span className="block truncate font-mono text-[11px] text-muted-foreground">{p}</span>
+                  </div>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+                </button>
+              ))}
+            </div>
           )}
         </div>
       </div>

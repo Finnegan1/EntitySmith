@@ -7,6 +7,7 @@ interface WindowApi {
   removeWorkspace: (path: string) => Promise<void>
   readWorkspaceFiles: (workspacePath: string) => Promise<RawFileResult[]>
   saveDataset: (payload: SaveDatasetPayload) => Promise<void>
+  onMenuOpenProject: (cb: (path: string) => void) => () => void
 }
 
 declare global {

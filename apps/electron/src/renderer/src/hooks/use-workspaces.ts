@@ -1,23 +1,14 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react'
 import type { Workspace, WorkspaceFile } from '@/types'
+import { validateDataset } from '@/lib/validate-dataset'
 
 function basename(p: string): string {
   return p.replace(/\\/g, '/').split('/').filter(Boolean).pop() ?? p
 }
-import { validateDataset } from '@/lib/validate-dataset'
 
-interface WorkspaceContextValue {
-  workspaces: Workspace[]
-  selectedFilePath: string | null
-  loadWorkspaces: () => Promise<void>
-  addWorkspace: () => Promise<void>
-  removeWorkspace: (path: string) => Promise<void>
-  selectFile: (path: string | null) => void
-}
-
-export const WorkspaceContext = createContext<WorkspaceContextValue | null>(null)
-
-function buildWorkspaceFiles(rawFiles: { name: string; path: string; content: string | null; isMarkdown: boolean }[]): WorkspaceFile[] {
+function buildWorkspaceFiles(
+  rawFiles: { name: string; path: string; content: string | null; isMarkdown: boolean }[]
+): WorkspaceFile[] {
   return rawFiles.map((raw) => {
     if (raw.isMarkdown) {
       return { name: raw.name, path: raw.path, status: 'markdown', validationErrors: [], dataset: null }
@@ -42,59 +33,60 @@ function buildWorkspaceFiles(rawFiles: { name: string; path: string; content: st
   })
 }
 
+interface WorkspaceContextValue {
+  activeProject: Workspace | null
+  recentPaths: string[]
+  selectedFilePath: string | null
+  openProject: (path: string) => Promise<void>
+  openProjectDialog: () => Promise<void>
+  selectFile: (path: string | null) => void
+}
+
+export const WorkspaceContext = createContext<WorkspaceContextValue | null>(null)
+
 export function useWorkspacesState(): WorkspaceContextValue {
-  const [workspaces, setWorkspaces] = useState<Workspace[]>([])
+  const [activeProject, setActiveProject] = useState<Workspace | null>(null)
+  const [recentPaths, setRecentPaths] = useState<string[]>([])
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null)
 
-  const loadWorkspaces = useCallback(async () => {
-    const paths = await window.api.listWorkspaces()
-    const loaded: Workspace[] = await Promise.all(
-      paths.map(async (p) => {
-        const rawFiles = await window.api.readWorkspaceFiles(p)
-        return {
-          path: p,
-          name: basename(p),
-          files: buildWorkspaceFiles(rawFiles),
-        }
-      })
-    )
-    setWorkspaces(loaded)
+  // Load recent project paths on startup
+  useEffect(() => {
+    window.api.listWorkspaces().then(setRecentPaths)
   }, [])
 
-  const addWorkspace = useCallback(async () => {
-    const path = await window.api.openFolderDialog()
-    if (!path) return
-    await window.api.addWorkspace(path)
+  const openProject = useCallback(async (path: string) => {
     const rawFiles = await window.api.readWorkspaceFiles(path)
-    const workspace: Workspace = {
+    const project: Workspace = {
       path,
       name: basename(path),
       files: buildWorkspaceFiles(rawFiles),
     }
-    setWorkspaces((prev) => {
-      if (prev.some((w) => w.path === path)) return prev
-      return [...prev, workspace]
-    })
+    await window.api.addWorkspace(path)
+    setRecentPaths((prev) =>
+      prev.includes(path) ? [path, ...prev.filter((p) => p !== path)] : [path, ...prev]
+    )
+    setActiveProject(project)
+    setSelectedFilePath(null)
   }, [])
 
-  const removeWorkspace = useCallback(async (path: string) => {
-    await window.api.removeWorkspace(path)
-    setWorkspaces((prev) => prev.filter((w) => w.path !== path))
-    setSelectedFilePath((prev) => {
-      if (prev?.startsWith(path)) return null
-      return prev
-    })
-  }, [])
+  const openProjectDialog = useCallback(async () => {
+    const path = await window.api.openFolderDialog()
+    if (!path) return
+    await openProject(path)
+  }, [openProject])
 
   const selectFile = useCallback((path: string | null) => {
     setSelectedFilePath(path)
   }, [])
 
+  // Listen for native File > Open Folder… menu action
   useEffect(() => {
-    loadWorkspaces()
-  }, [loadWorkspaces])
+    return window.api.onMenuOpenProject((path) => {
+      openProject(path)
+    })
+  }, [openProject])
 
-  return { workspaces, selectedFilePath, loadWorkspaces, addWorkspace, removeWorkspace, selectFile }
+  return { activeProject, recentPaths, selectedFilePath, openProject, openProjectDialog, selectFile }
 }
 
 export function useWorkspaces(): WorkspaceContextValue {

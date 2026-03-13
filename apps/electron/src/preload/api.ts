@@ -9,4 +9,9 @@ export const api = {
     ipcRenderer.invoke('workspace:readFiles', workspacePath),
   saveDataset: (payload: unknown): Promise<void> =>
     ipcRenderer.invoke('dataset:save', payload),
+  onMenuOpenProject: (cb: (path: string) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, path: string): void => cb(path)
+    ipcRenderer.on('menu:openProject', handler)
+    return () => ipcRenderer.off('menu:openProject', handler)
+  },
 }

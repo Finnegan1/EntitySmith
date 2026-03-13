@@ -12,7 +12,8 @@
       "Bash(bun run:*)",
       "Bash(npx tsc:*)",
       "Bash(bunx shadcn:*)",
-      "Bash(bun install:*)"
+      "Bash(bun install:*)",
+      "Bash(wc -l /Users/fynnborrmeister/Development/github.com/Finnegan1/knowledge-graph-creator/apps/electron/src/renderer/src/App.tsx && md5 /Users/fynnborrmeister/Development/github.com/Finnegan1/knowledge-graph-creator/apps/electron/src/renderer/src/App.tsx)"
     ]
   }
 }
