@@ -5,6 +5,7 @@ import { TopNav, type AppTab } from '@/components/top-nav'
 import { DatasetSidebar } from '@/components/dataset-sidebar'
 import { DatasetView } from '@/components/dataset-view/dataset-view'
 import { RdfView } from '@/components/rdf-view'
+import { PreviewView } from '@/components/preview-view'
 import { WelcomeScreen } from '@/components/welcome-screen'
 import { WorkspaceContext, useWorkspacesState, useWorkspaces } from '@/hooks/use-workspaces'
 import { DatasetContext, useDatasetState, useDataset } from '@/hooks/use-dataset'
@@ -62,7 +63,7 @@ function AppInner() {
             <DatasetSidebar activeTab={activeTab} />
             <Separator orientation="vertical" />
             <main className="flex-1 overflow-hidden">
-              {activeTab === 'data' ? <DatasetView /> : <RdfView />}
+              {activeTab === 'data' ? <DatasetView /> : activeTab === 'rdf' ? <RdfView /> : <PreviewView />}
             </main>
           </div>
         ) : (

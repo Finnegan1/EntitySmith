@@ -2,7 +2,7 @@ import { Database } from 'lucide-react'
 import { useWorkspaces } from '@/hooks/use-workspaces'
 import { cn } from '@/lib/utils'
 
-export type AppTab = 'data' | 'rdf'
+export type AppTab = 'data' | 'rdf' | 'preview'
 
 interface Props {
   activeTab: AppTab
@@ -23,7 +23,7 @@ export function TopNav({ activeTab, onTabChange }: Props) {
       {/* Tabs */}
       {activeProject && (
         <div className="flex items-stretch">
-          {(['data', 'rdf'] as AppTab[]).map((tab) => (
+          {(['data', 'rdf', 'preview'] as AppTab[]).map((tab) => (
             <button
               key={tab}
               onClick={() => onTabChange(tab)}
@@ -34,7 +34,7 @@ export function TopNav({ activeTab, onTabChange }: Props) {
                   : 'border-transparent text-muted-foreground hover:text-foreground'
               )}
             >
-              {tab === 'data' ? 'Data' : 'RDF'}
+              {{ data: 'Data', rdf: 'RDF', preview: 'Preview' }[tab]}
             </button>
           ))}
         </div>
