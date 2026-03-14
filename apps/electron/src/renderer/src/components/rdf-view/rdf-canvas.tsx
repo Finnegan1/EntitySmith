@@ -15,10 +15,12 @@ import '@xyflow/react/dist/style.css'
 import { useRdfGraph } from '@/hooks/use-rdf-graph'
 import { useWorkspaces } from '@/hooks/use-workspaces'
 import { DatasetNode } from './dataset-node'
+import { ColoredEdge } from './colored-edge'
 import { EdgeLabelDialog } from './edge-label-dialog'
 import { CanvasContextMenu, type ContextMenuTarget } from './canvas-context-menu'
 
 const nodeTypes = { dataset: DatasetNode }
+const edgeTypes = { colored: ColoredEdge }
 
 interface ContextMenuState {
   target: ContextMenuTarget
@@ -103,7 +105,7 @@ function RdfCanvasInner() {
     return String(edges.find((e) => e.id === renamingEdgeId)?.label ?? '')
   }, [renamingEdgeId, edges])
 
-  const defaultEdgeOptions = useMemo(() => ({ type: 'smoothstep' as const }), [])
+  const defaultEdgeOptions = useMemo(() => ({ type: 'colored' as const }), [])
 
   return (
     <div ref={reactFlowWrapper} className="h-full w-full">
@@ -119,6 +121,7 @@ function RdfCanvasInner() {
         onEdgeContextMenu={onEdgeContextMenu}
         onPaneClick={onPaneClick}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
         defaultEdgeOptions={defaultEdgeOptions}
         connectionMode={ConnectionMode.Loose}
         fitView

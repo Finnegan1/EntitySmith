@@ -13,7 +13,9 @@
       "Bash(npx tsc:*)",
       "Bash(bunx shadcn:*)",
       "Bash(bun install:*)",
-      "Bash(wc -l /Users/fynnborrmeister/Development/github.com/Finnegan1/knowledge-graph-creator/apps/electron/src/renderer/src/App.tsx && md5 /Users/fynnborrmeister/Development/github.com/Finnegan1/knowledge-graph-creator/apps/electron/src/renderer/src/App.tsx)"
+      "Bash(wc -l /Users/fynnborrmeister/Development/github.com/Finnegan1/knowledge-graph-creator/apps/electron/src/renderer/src/App.tsx && md5 /Users/fynnborrmeister/Development/github.com/Finnegan1/knowledge-graph-creator/apps/electron/src/renderer/src/App.tsx)",
+      "WebFetch(domain:reactflow.dev)",
+      "Bash(grep -r \"offsetY\\\\|offset\\\\|pathOptions\\\\|smoothstep\" /Users/fynnborrmeister/Development/github.com/Finnegan1/knowledge-graph-creator/apps/electron/src --include=\"*.tsx\" --include=\"*.ts\" 2>/dev/null | head -30)"
     ]
   }
 }

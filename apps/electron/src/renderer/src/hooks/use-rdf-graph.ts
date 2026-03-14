@@ -33,6 +33,10 @@ interface RdfGraphState {
 
 export const RdfGraphContext = createContext<RdfGraphState | null>(null)
 
+// Fractional bend-point offsets for parallel edges (relative to the node span).
+// At 0.2 and nodes 400 px apart → 80 px shift; at 200 px apart → 40 px shift.
+const PATH_FRACTIONS = [0, -0.2, 0.2, -0.4, 0.4, -0.6, 0.6]
+
 const EDGE_COLORS = [
   '#6366f1', // indigo
   '#22c55e', // green
@@ -119,6 +123,13 @@ export function useRdfGraphState(): RdfGraphState {
       if (!pendingConnection) return
       setEdges((eds) => {
         const color = EDGE_COLORS[eds.length % EDGE_COLORS.length]
+        const { source, target } = pendingConnection
+        const parallelCount = eds.filter(
+          (e) =>
+            (e.source === source && e.target === target) ||
+            (e.source === target && e.target === source)
+        ).length
+        const pathFraction = PATH_FRACTIONS[parallelCount % PATH_FRACTIONS.length]
         const newEdge: Edge = {
           id: `${pendingConnection.source}-${pendingConnection.sourceHandle ?? ''}-${pendingConnection.target}-${pendingConnection.targetHandle ?? ''}-${Date.now()}`,
           source: pendingConnection.source,
@@ -126,13 +137,10 @@ export function useRdfGraphState(): RdfGraphState {
           target: pendingConnection.target,
           targetHandle: pendingConnection.targetHandle,
           label,
-          type: 'smoothstep',
+          type: 'colored',
           animated: false,
+          data: { pathFraction },
           style: { stroke: color, strokeWidth: 2 },
-          labelStyle: { fill: color, fontWeight: 600, fontSize: 11 },
-          labelBgStyle: { fill: '#1e293b', stroke: color },
-          labelBgPadding: [6, 3] as [number, number],
-          labelBgBorderRadius: 4,
           markerEnd: { type: 'arrowclosed' as const, color }
         }
         return addEdge(newEdge, eds)
