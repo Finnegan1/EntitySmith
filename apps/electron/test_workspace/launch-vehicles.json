@@ -2,6 +2,7 @@
   "datasetName": "Orbital Launch Vehicles",
   "description": "Launch vehicle families used by the missions dataset, with payload capability and operational status.",
   "source": "https://en.wikipedia.org/wiki/Comparison_of_orbital_launch_systems",
+  "id": "vehicle_id",
   "data": [
     {
       "vehicle_id": "falcon9_block5",

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Plus } from 'lucide-react'
+import { Plus, KeyRound } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -43,6 +43,9 @@ export function DatasetTableToolbar() {
                   onClick={() => handleRemoveAttribute(col)}
                   className="text-xs text-destructive focus:text-destructive"
                 >
+                  {col === dataset?.id && (
+                    <KeyRound className="mr-1.5 h-3 w-3 shrink-0 opacity-60" />
+                  )}
                   {col}
                 </DropdownMenuItem>
               ))}

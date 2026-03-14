@@ -17,7 +17,7 @@ export function validateDataset(raw: string): { dataset: DatasetFile | null; err
   }
 
   const obj = parsed as Record<string, unknown>
-  const requiredFields: (keyof DatasetFile)[] = ['datasetName', 'description', 'source', 'data']
+  const requiredFields: (keyof DatasetFile)[] = ['datasetName', 'description', 'source', 'id', 'data']
   const missingFields = requiredFields.filter((f) => !(f in obj))
 
   if (missingFields.length > 0) {
@@ -54,10 +54,39 @@ export function validateDataset(raw: string): { dataset: DatasetFile | null; err
     }
   }
 
+  const idField = String(obj.id)
+
+  if (data.length > 0) {
+    const firstEntry = data[0] as Record<string, unknown>
+    if (!(idField in firstEntry)) {
+      errors.push({
+        kind: 'MISSING_FIELDS',
+        message: `The "id" attribute "${idField}" does not exist in the data entries.`,
+      })
+      return { dataset: null, errors }
+    }
+
+    const seen = new Set<unknown>()
+    const duplicates = new Set<unknown>()
+    for (const entry of data) {
+      const val = (entry as Record<string, unknown>)[idField]
+      if (seen.has(val)) duplicates.add(val)
+      else seen.add(val)
+    }
+    if (duplicates.size > 0) {
+      errors.push({
+        kind: 'DUPLICATE_IDS',
+        message: `Duplicate values found for id field "${idField}": ${[...duplicates].join(', ')}.`,
+      })
+      return { dataset: null, errors }
+    }
+  }
+
   const dataset: DatasetFile = {
     datasetName: String(obj.datasetName),
     description: String(obj.description),
     source: String(obj.source),
+    id: idField,
     data: data as Record<string, unknown>[],
   }
 

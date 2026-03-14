@@ -2,6 +2,7 @@
   "datasetName": "Space Agencies",
   "description": "Major civil space agencies and commercial launch providers used by the mission datasets.",
   "source": "https://en.wikipedia.org/wiki/List_of_government_space_agencies",
+  "id": "agency_id",
   "data": [
     {
       "agency_id": "nasa",

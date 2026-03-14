@@ -2,6 +2,7 @@ export interface DatasetFile {
   datasetName: string
   description: string
   source: string
+  id: string
   data: DataEntry[]
 }
 
@@ -23,7 +24,7 @@ export interface Workspace {
   files: WorkspaceFile[]
 }
 
-export type ValidationErrorKind = 'MALFORMED_JSON' | 'MISSING_FIELDS' | 'INCONSISTENT_ATTRIBUTES'
+export type ValidationErrorKind = 'MALFORMED_JSON' | 'MISSING_FIELDS' | 'INCONSISTENT_ATTRIBUTES' | 'DUPLICATE_IDS'
 
 export interface ValidationError {
   kind: ValidationErrorKind
@@ -47,6 +48,7 @@ export interface RdfNodeData {
   datasetName: string
   attributes: string[]
   filePath: string
+  idField: string
   [key: string]: unknown
 }
 

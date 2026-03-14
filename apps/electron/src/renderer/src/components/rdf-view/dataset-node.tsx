@@ -1,3 +1,4 @@
+import { KeyRound } from 'lucide-react'
 import { Handle, Position, type NodeProps } from '@xyflow/react'
 import type { Node } from '@xyflow/react'
 import type { RdfNodeData } from '@/types'
@@ -7,6 +8,7 @@ type DatasetNodeType = Node<RdfNodeData>
 // All handles are type="source" + connectionMode="loose" on the canvas
 // so any handle can start OR receive a connection. Arrow direction follows drag direction.
 export function DatasetNode({ data, selected }: NodeProps<DatasetNodeType>) {
+  const { idField } = data
   return (
     <div
       className={`min-w-[180px] rounded-lg border bg-card shadow-sm transition-shadow ${
@@ -35,7 +37,10 @@ export function DatasetNode({ data, selected }: NodeProps<DatasetNodeType>) {
                 style={{ left: -5 }}
               />
 
-              <span className="flex-1 truncate font-mono text-[11px] text-muted-foreground">
+              <span className="flex flex-1 items-center gap-1 truncate font-mono text-[11px] text-muted-foreground">
+                {attr === idField && (
+                  <KeyRound className="h-2.5 w-2.5 shrink-0 opacity-50" />
+                )}
                 {attr}
               </span>
 

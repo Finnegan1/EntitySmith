@@ -19,7 +19,7 @@ interface RdfGraphState {
   renamingEdgeId: string | null
   onNodesChange: OnNodesChange<Node<RdfNodeData>>
   onEdgesChange: OnEdgesChange
-  addDatasetNode: (filePath: string, datasetName: string, attributes: string[], position: { x: number; y: number }) => void
+  addDatasetNode: (filePath: string, datasetName: string, attributes: string[], idField: string, position: { x: number; y: number }) => void
   deleteNode: (nodeId: string) => void
   deleteEdge: (edgeId: string) => void
   startRenameEdge: (edgeId: string) => void
@@ -69,12 +69,12 @@ export function useRdfGraphState(): RdfGraphState {
   )
 
   const addDatasetNode = useCallback(
-    (filePath: string, datasetName: string, attributes: string[], position: { x: number; y: number }) => {
+    (filePath: string, datasetName: string, attributes: string[], idField: string, position: { x: number; y: number }) => {
       const newNode: Node<RdfNodeData> = {
         id: filePath,
         type: 'dataset',
         position,
-        data: { datasetName, attributes, filePath }
+        data: { datasetName, attributes, filePath, idField }
       }
       setNodes((nds) => [...nds, newNode])
     },

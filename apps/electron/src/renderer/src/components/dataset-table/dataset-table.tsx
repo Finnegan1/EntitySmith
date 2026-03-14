@@ -1,3 +1,4 @@
+import { KeyRound } from 'lucide-react'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   Table,
@@ -16,6 +17,7 @@ export function DatasetTable() {
   if (!dataset || dataset.data.length === 0) return null
 
   const columns = Object.keys(dataset.data[0])
+  const idField = dataset.id
 
   return (
     <ScrollArea className="flex-1">
@@ -24,7 +26,14 @@ export function DatasetTable() {
           <TableRow>
             <TableHead className="w-12 text-center font-mono text-[11px] text-muted-foreground">#</TableHead>
             {columns.map((col) => (
-              <TableHead key={col} className="font-mono text-[11px]">{col}</TableHead>
+              <TableHead key={col} className="font-mono text-[11px]">
+                {col === idField ? (
+                  <span className="flex items-center gap-1 text-foreground/70" title="ID field">
+                    <KeyRound className="h-3 w-3 shrink-0 text-muted-foreground" />
+                    {col}
+                  </span>
+                ) : col}
+              </TableHead>
             ))}
           </TableRow>
         </TableHeader>
@@ -33,7 +42,7 @@ export function DatasetTable() {
             <TableRow key={rowIdx}>
               <TableCell className="text-center font-mono text-[11px] text-muted-foreground">{rowIdx + 1}</TableCell>
               {columns.map((col) => (
-                <TableCell key={col} className="p-1">
+                <TableCell key={col} className={col === idField ? 'p-1 bg-muted/20' : 'p-1'}>
                   <DatasetTableCell rowIdx={rowIdx} col={col} value={row[col]} />
                 </TableCell>
               ))}

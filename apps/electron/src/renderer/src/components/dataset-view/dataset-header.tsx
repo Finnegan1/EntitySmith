@@ -1,4 +1,4 @@
-import { Save } from 'lucide-react'
+import { Save, KeyRound } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useDataset } from '@/hooks/use-dataset'
 import { useWorkspaces } from '@/hooks/use-workspaces'
@@ -24,6 +24,15 @@ export function DatasetHeader() {
             <>
               <span className="text-muted-foreground">·</span>
               <span className="font-mono text-[11px] text-muted-foreground">{dataset.source}</span>
+            </>
+          )}
+          {dataset.id && (
+            <>
+              <span className="text-muted-foreground">·</span>
+              <span className="flex items-center gap-1 font-mono text-[11px] text-muted-foreground" title="ID field">
+                <KeyRound className="h-3 w-3 shrink-0" />
+                {dataset.id}
+              </span>
             </>
           )}
         </div>

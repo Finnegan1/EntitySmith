@@ -2,6 +2,7 @@
   "datasetName": "Orbital Launch Sites",
   "description": "Active orbital launch pads and ranges used by recent missions in this workspace.",
   "source": "https://en.wikipedia.org/wiki/List_of_rocket_launch_sites",
+  "id": "launch_site_id",
   "data": [
     {
       "launch_site_id": "ksc_lc39a",

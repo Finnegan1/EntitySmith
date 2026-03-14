@@ -66,7 +66,7 @@ function RdfCanvasInner() {
       if (!file || !file.dataset) return
       const position = screenToFlowPosition({ x: event.clientX, y: event.clientY })
       const attributes = file.dataset.data.length > 0 ? Object.keys(file.dataset.data[0]) : []
-      addDatasetNode(filePath, file.dataset.datasetName, attributes, position)
+      addDatasetNode(filePath, file.dataset.datasetName, attributes, file.dataset.id, position)
     },
     [activeProject, screenToFlowPosition, addDatasetNode]
   )
