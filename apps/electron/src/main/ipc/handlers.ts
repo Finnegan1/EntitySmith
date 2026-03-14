@@ -1,6 +1,7 @@
 import { ipcMain, dialog } from 'electron'
 import { readdirSync, readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
+import { is } from '@electron-toolkit/utils'
 import { initWorkspaceStore, readWorkspaces, addWorkspace, removeWorkspace } from './workspace-store'
 
 interface RawFileResult {
@@ -15,8 +16,13 @@ interface SaveDatasetPayload {
   dataset: unknown
 }
 
-export function registerIpcHandlers(userDataPath: string): void {
+export function registerIpcHandlers(userDataPath: string, appPath: string): void {
   initWorkspaceStore(userDataPath)
+
+  // In development, pre-seed the test workspace so it appears in the list on first launch
+  if (is.dev) {
+    addWorkspace(join(appPath, 'test_workspace'))
+  }
 
   ipcMain.handle('dialog:openFolder', async () => {
     const result = await dialog.showOpenDialog({ properties: ['openDirectory'] })

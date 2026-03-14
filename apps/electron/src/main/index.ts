@@ -65,7 +65,7 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
-  registerIpcHandlers(app.getPath('userData'))
+  registerIpcHandlers(app.getPath('userData'), app.getAppPath())
   createWindow()
 
   app.on('activate', function () {
