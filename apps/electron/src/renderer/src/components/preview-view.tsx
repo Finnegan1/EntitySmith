@@ -2,13 +2,15 @@ import { useEffect, useMemo, useState } from 'react'
 import { DirectedGraph } from 'graphology'
 import { SigmaContainer, useLoadGraph, ControlsContainer, ZoomControl } from '@react-sigma/core'
 import '@react-sigma/core/lib/style.css'
+import CodeMirror from '@uiw/react-codemirror'
+import { oneDark } from '@codemirror/theme-one-dark'
 
 import { useRdfGraph } from '@/hooks/use-rdf-graph'
 import { useWorkspaces } from '@/hooks/use-workspaces'
 import { cn } from '@/lib/utils'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 
-type SubView = 'table' | 'graph'
+type SubView = 'table' | 'graph' | 'raw'
 
 interface RdfTriple {
   subject: string
@@ -69,6 +71,56 @@ function useActualTriples(): RdfTriple[] {
 
     return result
   }, [nodes, edges, activeProject])
+}
+
+function triplesToTurtle(triples: RdfTriple[]): string {
+  if (triples.length === 0) return ''
+  const base = 'http://knowledge-graph-creator.local/'
+  const lines: string[] = [
+    `@prefix ex: <${base}> .`,
+    '',
+  ]
+
+  // Group by subject for compact Turtle (semicolon chaining)
+  const bySubject = new Map<string, { predicate: string; object: string }[]>()
+  for (const t of triples) {
+    const s = t.subject.replace(/[^A-Za-z0-9_.-]/g, '_')
+    if (!bySubject.has(s)) bySubject.set(s, [])
+    bySubject.get(s)!.push({ predicate: t.predicate, object: t.object.replace(/[^A-Za-z0-9_.-]/g, '_') })
+  }
+
+  for (const [subject, preds] of bySubject) {
+    if (preds.length === 1) {
+      lines.push(`ex:${subject} ex:${preds[0].predicate} ex:${preds[0].object} .`)
+    } else {
+      lines.push(`ex:${subject}`)
+      preds.forEach(({ predicate, object }, i) => {
+        const sep = i < preds.length - 1 ? ' ;' : ' .'
+        lines.push(`    ex:${predicate} ex:${object}${sep}`)
+      })
+    }
+    lines.push('')
+  }
+
+  return lines.join('\n')
+}
+
+function RawView({ triples }: { triples: RdfTriple[] }) {
+  const turtle = useMemo(() => triplesToTurtle(triples), [triples])
+  return (
+    <div className="flex-1 overflow-auto">
+      <div className="px-4 py-2 text-xs text-muted-foreground border-b">
+        Turtle (W3C RDF) · {triples.length} triple{triples.length !== 1 ? 's' : ''}
+      </div>
+      <CodeMirror
+        value={turtle}
+        readOnly
+        theme={oneDark}
+        basicSetup={{ lineNumbers: true, foldGutter: false, highlightActiveLine: false }}
+        style={{ fontSize: 12 }}
+      />
+    </div>
+  )
 }
 
 // ── Sigma graph loader (must be a child of SigmaContainer) ──────────────────
@@ -167,7 +219,7 @@ export function PreviewView() {
     <div className="flex h-full flex-col overflow-hidden">
       {/* Sub-view toggle */}
       <div className="flex shrink-0 items-stretch border-b">
-        {(['table', 'graph'] as SubView[]).map((v) => (
+        {(['table', 'graph', 'raw'] as SubView[]).map((v) => (
           <button
             key={v}
             onClick={() => setSubView(v)}
@@ -178,7 +230,7 @@ export function PreviewView() {
                 : 'border-transparent text-muted-foreground hover:text-foreground'
             )}
           >
-            {v === 'table' ? 'Table' : 'Graph'}
+            {v === 'table' ? 'Table' : v === 'graph' ? 'Graph' : 'Raw'}
           </button>
         ))}
       </div>
@@ -207,7 +259,7 @@ export function PreviewView() {
             </TableBody>
           </Table>
         </div>
-      ) : (
+      ) : subView === 'graph' ? (
         <div className="flex-1 overflow-hidden">
           <SigmaContainer
             style={{ height: '100%', width: '100%' }}
@@ -224,6 +276,8 @@ export function PreviewView() {
             </ControlsContainer>
           </SigmaContainer>
         </div>
+      ) : (
+        <RawView triples={triples} />
       )}
     </div>
   )
