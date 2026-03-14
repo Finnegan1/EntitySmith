@@ -4,6 +4,8 @@ import type { RdfNodeData } from '@/types'
 
 type DatasetNodeType = Node<RdfNodeData>
 
+// All handles are type="source" + connectionMode="loose" on the canvas
+// so any handle can start OR receive a connection. Arrow direction follows drag direction.
 export function DatasetNode({ data, selected }: NodeProps<DatasetNodeType>) {
   return (
     <div
@@ -25,11 +27,10 @@ export function DatasetNode({ data, selected }: NodeProps<DatasetNodeType>) {
         ) : (
           data.attributes.map((attr) => (
             <div key={attr} className="relative flex items-center px-3 py-0.5">
-              {/* Left handle (target) */}
               <Handle
-                type="target"
+                type="source"
                 position={Position.Left}
-                id={`${attr}-target`}
+                id={`${attr}-left`}
                 className="!h-2.5 !w-2.5 !rounded-full !border-2 !border-primary !bg-background"
                 style={{ left: -5 }}
               />
@@ -38,11 +39,10 @@ export function DatasetNode({ data, selected }: NodeProps<DatasetNodeType>) {
                 {attr}
               </span>
 
-              {/* Right handle (source) */}
               <Handle
                 type="source"
                 position={Position.Right}
-                id={`${attr}-source`}
+                id={`${attr}-right`}
                 className="!h-2.5 !w-2.5 !rounded-full !border-2 !border-primary !bg-background"
                 style={{ right: -5 }}
               />
@@ -50,20 +50,6 @@ export function DatasetNode({ data, selected }: NodeProps<DatasetNodeType>) {
           ))
         )}
       </div>
-
-      {/* Bottom center connection handles */}
-      <Handle
-        type="target"
-        position={Position.Top}
-        id="top"
-        className="!h-2.5 !w-2.5 !rounded-full !border-2 !border-muted-foreground !bg-background"
-      />
-      <Handle
-        type="source"
-        position={Position.Bottom}
-        id="bottom"
-        className="!h-2.5 !w-2.5 !rounded-full !border-2 !border-muted-foreground !bg-background"
-      />
     </div>
   )
 }

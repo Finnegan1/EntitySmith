@@ -6,6 +6,7 @@ import {
   MiniMap,
   ReactFlowProvider,
   useReactFlow,
+  ConnectionMode,
   type NodeMouseHandler,
   type EdgeMouseHandler
 } from '@xyflow/react'
@@ -119,6 +120,7 @@ function RdfCanvasInner() {
         onPaneClick={onPaneClick}
         nodeTypes={nodeTypes}
         defaultEdgeOptions={defaultEdgeOptions}
+        connectionMode={ConnectionMode.Loose}
         fitView
         fitViewOptions={{ padding: 0.2 }}
         deleteKeyCode="Delete"

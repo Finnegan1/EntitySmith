@@ -33,6 +33,19 @@ interface RdfGraphState {
 
 export const RdfGraphContext = createContext<RdfGraphState | null>(null)
 
+const EDGE_COLORS = [
+  '#6366f1', // indigo
+  '#22c55e', // green
+  '#f59e0b', // amber
+  '#ec4899', // pink
+  '#14b8a6', // teal
+  '#f97316', // orange
+  '#a855f7', // purple
+  '#06b6d4', // cyan
+  '#ef4444', // red
+  '#84cc16', // lime
+]
+
 export function useRdfGraphState(): RdfGraphState {
   const [nodes, setNodes] = useState<Node<RdfNodeData>[]>([])
   const [edges, setEdges] = useState<Edge[]>([])
@@ -104,23 +117,26 @@ export function useRdfGraphState(): RdfGraphState {
   const confirmConnection = useCallback(
     (label: string) => {
       if (!pendingConnection) return
-      const newEdge: Edge = {
-        id: `${pendingConnection.source}-${pendingConnection.sourceHandle ?? ''}-${pendingConnection.target}-${pendingConnection.targetHandle ?? ''}-${Date.now()}`,
-        source: pendingConnection.source,
-        sourceHandle: pendingConnection.sourceHandle,
-        target: pendingConnection.target,
-        targetHandle: pendingConnection.targetHandle,
-        label,
-        type: 'smoothstep',
-        animated: false,
-        style: { stroke: '#6366f1', strokeWidth: 2 },
-        labelStyle: { fill: '#e2e8f0', fontWeight: 600, fontSize: 11 },
-        labelBgStyle: { fill: '#1e293b', stroke: '#334155' },
-        labelBgPadding: [6, 3] as [number, number],
-        labelBgBorderRadius: 4,
-        markerEnd: { type: 'arrowclosed' as const, color: '#6366f1' }
-      }
-      setEdges((eds) => addEdge(newEdge, eds))
+      setEdges((eds) => {
+        const color = EDGE_COLORS[eds.length % EDGE_COLORS.length]
+        const newEdge: Edge = {
+          id: `${pendingConnection.source}-${pendingConnection.sourceHandle ?? ''}-${pendingConnection.target}-${pendingConnection.targetHandle ?? ''}-${Date.now()}`,
+          source: pendingConnection.source,
+          sourceHandle: pendingConnection.sourceHandle,
+          target: pendingConnection.target,
+          targetHandle: pendingConnection.targetHandle,
+          label,
+          type: 'smoothstep',
+          animated: false,
+          style: { stroke: color, strokeWidth: 2 },
+          labelStyle: { fill: color, fontWeight: 600, fontSize: 11 },
+          labelBgStyle: { fill: '#1e293b', stroke: color },
+          labelBgPadding: [6, 3] as [number, number],
+          labelBgBorderRadius: 4,
+          markerEnd: { type: 'arrowclosed' as const, color }
+        }
+        return addEdge(newEdge, eds)
+      })
       setPendingConnection(null)
     },
     [pendingConnection]
