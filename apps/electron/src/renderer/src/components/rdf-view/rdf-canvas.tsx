@@ -7,6 +7,7 @@ import {
   ReactFlowProvider,
   useReactFlow,
   ConnectionMode,
+  Panel,
   type NodeMouseHandler,
   type EdgeMouseHandler
 } from '@xyflow/react'
@@ -14,10 +15,12 @@ import '@xyflow/react/dist/style.css'
 
 import { useRdfGraph } from '@/hooks/use-rdf-graph'
 import { useWorkspaces } from '@/hooks/use-workspaces'
+import { inferRdfClass, inferColumnMappings } from '@/lib/rdf-inference'
 import { DatasetNode } from './dataset-node'
 import { ColoredEdge } from './colored-edge'
 import { EdgeLabelDialog } from './edge-label-dialog'
 import { CanvasContextMenu, type ContextMenuTarget } from './canvas-context-menu'
+import { PrefixManagerPanel } from './prefix-manager-panel'
 
 const nodeTypes = { dataset: DatasetNode }
 const edgeTypes = { colored: ColoredEdge }
@@ -64,9 +67,26 @@ function RdfCanvasInner() {
       if (!filePath || !activeProject) return
       const file = activeProject.files.find((f) => f.path === filePath)
       if (!file || !file.dataset) return
+
       const position = screenToFlowPosition({ x: event.clientX, y: event.clientY })
-      const attributes = file.dataset.data.length > 0 ? Object.keys(file.dataset.data[0]) : []
-      addDatasetNode(filePath, file.dataset.datasetName, attributes, file.dataset.id, position)
+      const attributes =
+        file.dataset.data.length > 0 ? Object.keys(file.dataset.data[0]) : []
+
+      // Auto-infer RDF class, subject column, and column mappings from data
+      const rdfClass = inferRdfClass(file.dataset.datasetName)
+      const subjectColumn = file.dataset.id
+      const columnMappings = inferColumnMappings(attributes, file.dataset.data)
+
+      addDatasetNode(
+        filePath,
+        file.dataset.datasetName,
+        attributes,
+        file.dataset.id,
+        rdfClass,
+        subjectColumn,
+        columnMappings,
+        position
+      )
     },
     [activeProject, screenToFlowPosition, addDatasetNode]
   )
@@ -95,11 +115,8 @@ function RdfCanvasInner() {
   )
 
   const closeContextMenu = useCallback(() => setContextMenu(null), [])
-
-  // Clicking on the pane closes any open context menu
   const onPaneClick = useCallback(() => setContextMenu(null), [])
 
-  // Derive current label of the edge being renamed
   const renamingEdgeCurrentLabel = useMemo(() => {
     if (!renamingEdgeId) return ''
     return String(edges.find((e) => e.id === renamingEdgeId)?.label ?? '')
@@ -135,13 +152,19 @@ function RdfCanvasInner() {
           maskColor="rgba(0,0,0,0.4)"
           className="!border-border !bg-card"
         />
+
+        {/* Prefix / namespace manager */}
+        <Panel position="bottom-left">
+          <PrefixManagerPanel />
+        </Panel>
       </ReactFlow>
 
       {/* New connection label dialog */}
       <EdgeLabelDialog
         open={pendingConnection !== null}
-        title="Name this connection"
-        confirmLabel="Add connection"
+        title="Name this predicate"
+        confirmLabel="Add predicate"
+        placeholder="e.g. ex:hasOrder, schema:knows"
         onConfirm={confirmConnection}
         onCancel={cancelConnection}
       />
@@ -150,7 +173,7 @@ function RdfCanvasInner() {
       <EdgeLabelDialog
         open={renamingEdgeId !== null}
         initialValue={renamingEdgeCurrentLabel}
-        title="Rename connection"
+        title="Rename predicate"
         confirmLabel="Save"
         onConfirm={confirmRenameEdge}
         onCancel={cancelRenameEdge}

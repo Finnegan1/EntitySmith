@@ -10,6 +10,7 @@ import { WelcomeScreen } from '@/components/welcome-screen'
 import { WorkspaceContext, useWorkspacesState, useWorkspaces } from '@/hooks/use-workspaces'
 import { DatasetContext, useDatasetState, useDataset } from '@/hooks/use-dataset'
 import { RdfGraphContext, useRdfGraphState } from '@/hooks/use-rdf-graph'
+import { PrefixContext, usePrefixesState } from '@/hooks/use-prefixes'
 
 function KeyboardSave() {
   const { selectedFilePath } = useWorkspaces()
@@ -81,12 +82,15 @@ export function App() {
   const workspaceValue = useWorkspacesState()
   const datasetValue = useDatasetState()
   const rdfGraphValue = useRdfGraphState()
+  const prefixValue = usePrefixesState()
 
   return (
     <WorkspaceContext.Provider value={workspaceValue}>
       <DatasetContext.Provider value={datasetValue}>
         <RdfGraphContext.Provider value={rdfGraphValue}>
-          <AppInner />
+          <PrefixContext.Provider value={prefixValue}>
+            <AppInner />
+          </PrefixContext.Provider>
         </RdfGraphContext.Provider>
       </DatasetContext.Provider>
     </WorkspaceContext.Provider>

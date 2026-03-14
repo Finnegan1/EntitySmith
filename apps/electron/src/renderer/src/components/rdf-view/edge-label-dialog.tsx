@@ -14,6 +14,7 @@ interface EdgeLabelDialogProps {
   initialValue?: string
   title?: string
   confirmLabel?: string
+  placeholder?: string
   onConfirm: (label: string) => void
   onCancel: () => void
 }
@@ -23,6 +24,7 @@ export function EdgeLabelDialog({
   initialValue = '',
   title = 'Name this connection',
   confirmLabel = 'Add connection',
+  placeholder = 'e.g. ex:hasAttribute, schema:knows',
   onConfirm,
   onCancel
 }: EdgeLabelDialogProps) {
@@ -59,7 +61,7 @@ export function EdgeLabelDialog({
         <div className="py-2">
           <Input
             ref={inputRef}
-            placeholder="e.g. includes, relatedTo, hasAttribute"
+            placeholder={placeholder}
             value={label}
             onChange={(e) => setLabel(e.target.value)}
             onKeyDown={handleKeyDown}

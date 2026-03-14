@@ -9,7 +9,7 @@ import {
   addEdge,
   type Connection
 } from '@xyflow/react'
-import type { RdfNodeData, PendingConnection } from '@/types'
+import type { RdfNodeData, PendingConnection, ColumnMapping } from '@/types'
 
 interface RdfGraphState {
   nodes: Node<RdfNodeData>[]
@@ -19,7 +19,16 @@ interface RdfGraphState {
   renamingEdgeId: string | null
   onNodesChange: OnNodesChange<Node<RdfNodeData>>
   onEdgesChange: OnEdgesChange
-  addDatasetNode: (filePath: string, datasetName: string, attributes: string[], idField: string, position: { x: number; y: number }) => void
+  addDatasetNode: (
+    filePath: string,
+    datasetName: string,
+    attributes: string[],
+    idField: string,
+    rdfClass: string,
+    subjectColumn: string,
+    columnMappings: Record<string, ColumnMapping>,
+    position: { x: number; y: number }
+  ) => void
   deleteNode: (nodeId: string) => void
   deleteEdge: (edgeId: string) => void
   startRenameEdge: (edgeId: string) => void
@@ -29,12 +38,14 @@ interface RdfGraphState {
   cancelConnection: () => void
   setPendingConnection: (connection: PendingConnection | null) => void
   onConnect: (connection: Connection) => void
+  updateNodeRdfClass: (nodeId: string, rdfClass: string) => void
+  updateNodeSubjectColumn: (nodeId: string, column: string) => void
+  updateNodeColumnMapping: (nodeId: string, attr: string, mapping: Partial<ColumnMapping>) => void
 }
 
 export const RdfGraphContext = createContext<RdfGraphState | null>(null)
 
 // Fractional bend-point offsets for parallel edges (relative to the node span).
-// At 0.2 and nodes 400 px apart → 80 px shift; at 200 px apart → 40 px shift.
 const PATH_FRACTIONS = [0, -0.2, 0.2, -0.4, 0.4, -0.6, 0.6]
 
 const EDGE_COLORS = [
@@ -69,12 +80,21 @@ export function useRdfGraphState(): RdfGraphState {
   )
 
   const addDatasetNode = useCallback(
-    (filePath: string, datasetName: string, attributes: string[], idField: string, position: { x: number; y: number }) => {
+    (
+      filePath: string,
+      datasetName: string,
+      attributes: string[],
+      idField: string,
+      rdfClass: string,
+      subjectColumn: string,
+      columnMappings: Record<string, ColumnMapping>,
+      position: { x: number; y: number }
+    ) => {
       const newNode: Node<RdfNodeData> = {
         id: filePath,
         type: 'dataset',
         position,
-        data: { datasetName, attributes, filePath, idField }
+        data: { datasetName, attributes, filePath, idField, rdfClass, subjectColumn, columnMappings }
       }
       setNodes((nds) => [...nds, newNode])
     },
@@ -154,6 +174,44 @@ export function useRdfGraphState(): RdfGraphState {
     setPendingConnection(null)
   }, [])
 
+  const updateNodeRdfClass = useCallback((nodeId: string, rdfClass: string) => {
+    setNodes((nds) =>
+      nds.map((n) =>
+        n.id === nodeId ? { ...n, data: { ...n.data, rdfClass } } : n
+      )
+    )
+  }, [])
+
+  const updateNodeSubjectColumn = useCallback((nodeId: string, column: string) => {
+    setNodes((nds) =>
+      nds.map((n) =>
+        n.id === nodeId ? { ...n, data: { ...n.data, subjectColumn: column } } : n
+      )
+    )
+  }, [])
+
+  const updateNodeColumnMapping = useCallback(
+    (nodeId: string, attr: string, mapping: Partial<ColumnMapping>) => {
+      setNodes((nds) =>
+        nds.map((n) =>
+          n.id === nodeId
+            ? {
+                ...n,
+                data: {
+                  ...n.data,
+                  columnMappings: {
+                    ...n.data.columnMappings,
+                    [attr]: { ...n.data.columnMappings[attr], ...mapping },
+                  },
+                },
+              }
+            : n
+        )
+      )
+    },
+    []
+  )
+
   return {
     nodes,
     edges,
@@ -171,7 +229,10 @@ export function useRdfGraphState(): RdfGraphState {
     confirmConnection,
     cancelConnection,
     setPendingConnection,
-    onConnect
+    onConnect,
+    updateNodeRdfClass,
+    updateNodeSubjectColumn,
+    updateNodeColumnMapping,
   }
 }
 

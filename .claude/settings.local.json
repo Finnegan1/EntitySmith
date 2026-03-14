@@ -19,7 +19,8 @@
       "mcp__electron-mcp-server__list_sessions",
       "mcp__electron-mcp-server__launch_electron_app",
       "mcp__electron-mcp-server__screenshot",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "WebFetch(domain:issemantic.net)"
     ]
   }
 }
