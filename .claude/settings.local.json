@@ -20,7 +20,12 @@
       "mcp__electron-mcp-server__launch_electron_app",
       "mcp__electron-mcp-server__screenshot",
       "Bash(find:*)",
-      "WebFetch(domain:issemantic.net)"
+      "WebFetch(domain:issemantic.net)",
+      "WebFetch(domain:sim51.github.io)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:api.github.com)",
+      "WebFetch(domain:www.sigmajs.org)"
     ]
   }
 }

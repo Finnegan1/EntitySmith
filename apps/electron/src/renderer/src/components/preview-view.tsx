@@ -424,93 +424,249 @@ function GraphSearch() {
   )
 }
 
-// ── Drag and drop ─────────────────────────────────────────────────────────────
+// ── Interaction manager (drag, hover highlight, rect-select + group drag) ─────
 
-function DragAndDrop() {
-  const sigma = useSigma()
-  const registerEvents = useRegisterEvents()
-  const draggedNodeRef = useRef<string | null>(null)
-  const isDraggingRef = useRef(false)
+type SelectionRect = { x1: number; y1: number; x2: number; y2: number }
 
-  useEffect(() => {
-    registerEvents({
-      downNode: (event) => {
-        isDraggingRef.current = true
-        draggedNodeRef.current = event.node
-        // Prevent sigma from starting a camera pan
-        event.preventSigmaDefault()
-        sigma.getGraph().setNodeAttribute(event.node, 'highlighted', true)
-      },
-      mousemovebody: (event) => {
-        if (!isDraggingRef.current || !draggedNodeRef.current) return
-        // Convert viewport coords to graph coords and move the node
-        const pos = sigma.viewportToGraph(event)
-        sigma.getGraph().setNodeAttribute(draggedNodeRef.current, 'x', pos.x)
-        sigma.getGraph().setNodeAttribute(draggedNodeRef.current, 'y', pos.y)
-        // Prevent camera movement while dragging
-        event.preventSigmaDefault()
-        event.original.preventDefault()
-        event.original.stopPropagation()
-      },
-      mouseup: () => {
-        if (draggedNodeRef.current) {
-          sigma.getGraph().setNodeAttribute(draggedNodeRef.current, 'highlighted', false)
-        }
-        isDraggingRef.current = false
-        draggedNodeRef.current = null
-      },
-      // Also stop if mouse leaves the container
-      mouseleave: () => {
-        if (draggedNodeRef.current) {
-          sigma.getGraph().setNodeAttribute(draggedNodeRef.current, 'highlighted', false)
-        }
-        isDraggingRef.current = false
-        draggedNodeRef.current = null
-      },
-    })
-  }, [registerEvents, sigma])
-
-  return null
-}
-
-// ── Hover highlight ───────────────────────────────────────────────────────────
-
-function HoverHighlight() {
+function InteractionManager({
+  isSelectMode,
+  setIsSelectMode,
+}: {
+  isSelectMode: boolean
+  setIsSelectMode: (v: boolean | ((prev: boolean) => boolean)) => void
+}) {
   const sigma = useSigma()
   const registerEvents = useRegisterEvents()
   const setSettings = useSetSettings()
+
+  // ── reactive state (drives re-render for overlay & settings) ────────────────
+  const [selectedNodes, setSelectedNodes] = useState<Set<string>>(new Set())
   const [hoveredNode, setHoveredNode] = useState<string | null>(null)
+  const [selectionRect, setSelectionRect] = useState<SelectionRect | null>(null)
 
-  useEffect(() => {
-    registerEvents({
-      enterNode: (event) => setHoveredNode(event.node),
-      leaveNode: () => setHoveredNode(null),
-    })
-  }, [registerEvents])
+  // ── refs (readable inside event callbacks without stale closures) ───────────
+  const selectModeRef = useRef(false)
+  const selectedRef = useRef<Set<string>>(new Set())
+  const hoveredRef = useRef<string | null>(null)
+  const rectStartRef = useRef<{ x: number; y: number } | null>(null)
+  const selectionRectRef = useRef<SelectionRect | null>(null)
+  // single-node drag
+  const dragNodeRef = useRef<string | null>(null)
+  const isDraggingSingleRef = useRef(false)
+  // group drag
+  const isDraggingGroupRef = useRef(false)
+  const groupDragStartRef = useRef<{ x: number; y: number } | null>(null)
+  const groupStartPositionsRef = useRef<Map<string, { x: number; y: number }>>(new Map())
 
+  // keep refs in sync with state
+  useEffect(() => { selectModeRef.current = isSelectMode }, [isSelectMode])
+  useEffect(() => { selectedRef.current = selectedNodes }, [selectedNodes])
+  useEffect(() => { hoveredRef.current = hoveredNode }, [hoveredNode])
+
+  // cursor feedback
   useEffect(() => {
-    if (!hoveredNode) {
+    const el = sigma.getContainer()
+    el.style.cursor = isSelectMode ? 'crosshair' : ''
+    return () => { el.style.cursor = '' }
+  }, [isSelectMode, sigma])
+
+  // ── unified nodeReducer / edgeReducer ───────────────────────────────────────
+  useEffect(() => {
+    const graph = sigma.getGraph()
+    const sel = selectedNodes
+    const hov = hoveredNode
+
+    // nothing active → clear reducers
+    if (sel.size === 0 && !hov) {
       setSettings({ nodeReducer: null, edgeReducer: null })
       return
     }
 
-    const graph = sigma.getGraph()
-    const neighbors = new Set(graph.neighbors(hoveredNode))
-    neighbors.add(hoveredNode)
-    const connectedEdges = new Set(graph.edges(hoveredNode))
+    // precompute hovered neighbourhood once (captured in closure, not recomputed per node)
+    const hovNeighbors = hov ? new Set([hov, ...graph.neighbors(hov)]) : null
+    const hovEdges = hov ? new Set(graph.edges(hov)) : null
 
     setSettings({
       nodeReducer: (node, data) => {
-        if (neighbors.has(node)) return { ...data, highlighted: true, zIndex: 1 }
+        if (sel.size > 0 && sel.has(node)) return { ...data, highlighted: true, zIndex: 1 }
+        if (hovNeighbors?.has(node)) return { ...data, highlighted: node === hov, zIndex: 1 }
         return { ...data, color: '#1e293b', label: '', zIndex: 0 }
       },
       edgeReducer: (edge, data) => {
-        if (connectedEdges.has(edge)) return { ...data, zIndex: 1 }
-        return { ...data, color: '#1e293b', label: '', hidden: false, zIndex: 0 }
+        if (hovEdges?.has(edge)) return { ...data, zIndex: 1 }
+        return { ...data, color: '#1e293b', label: '', zIndex: 0 }
       },
     })
-  }, [hoveredNode, sigma, setSettings])
+  }, [selectedNodes, hoveredNode, sigma, setSettings])
 
+  // ── event registration (runs once; all mutable state accessed via refs) ─────
+  useEffect(() => {
+    registerEvents({
+      // hover
+      enterNode: (e) => setHoveredNode(e.node),
+      leaveNode: () => setHoveredNode(null),
+
+      downNode: (e) => {
+        e.preventSigmaDefault()
+        if (selectModeRef.current) {
+          const nodeId = e.node
+          if (selectedRef.current.has(nodeId)) {
+            // start group drag
+            isDraggingGroupRef.current = true
+            groupDragStartRef.current = sigma.viewportToGraph(e.event)
+            const positions = new Map<string, { x: number; y: number }>()
+            for (const n of selectedRef.current) {
+              positions.set(n, {
+                x: sigma.getGraph().getNodeAttribute(n, 'x') as number,
+                y: sigma.getGraph().getNodeAttribute(n, 'y') as number,
+              })
+            }
+            groupStartPositionsRef.current = positions
+          } else {
+            // toggle-select individual node
+            setSelectedNodes((prev) => {
+              const next = new Set(prev)
+              next.has(nodeId) ? next.delete(nodeId) : next.add(nodeId)
+              return next
+            })
+          }
+        } else {
+          // pan mode: single-node drag
+          isDraggingSingleRef.current = true
+          dragNodeRef.current = e.node
+          sigma.getGraph().setNodeAttribute(e.node, 'highlighted', true)
+        }
+      },
+
+      downStage: (e) => {
+        if (!selectModeRef.current) return
+        rectStartRef.current = { x: e.event.x, y: e.event.y }
+        const rect: SelectionRect = { x1: e.event.x, y1: e.event.y, x2: e.event.x, y2: e.event.y }
+        selectionRectRef.current = rect
+        setSelectionRect(rect)
+        e.preventSigmaDefault()
+      },
+
+      mousemovebody: (e) => {
+        if (isDraggingSingleRef.current && dragNodeRef.current) {
+          const pos = sigma.viewportToGraph(e)
+          sigma.getGraph().setNodeAttribute(dragNodeRef.current, 'x', pos.x)
+          sigma.getGraph().setNodeAttribute(dragNodeRef.current, 'y', pos.y)
+          e.preventSigmaDefault()
+          e.original.preventDefault()
+          e.original.stopPropagation()
+          return
+        }
+
+        if (isDraggingGroupRef.current && groupDragStartRef.current) {
+          const cur = sigma.viewportToGraph(e)
+          const dx = cur.x - groupDragStartRef.current.x
+          const dy = cur.y - groupDragStartRef.current.y
+          const graph = sigma.getGraph()
+          for (const [nodeId, start] of groupStartPositionsRef.current) {
+            graph.setNodeAttribute(nodeId, 'x', start.x + dx)
+            graph.setNodeAttribute(nodeId, 'y', start.y + dy)
+          }
+          e.preventSigmaDefault()
+          e.original.preventDefault()
+          return
+        }
+
+        if (rectStartRef.current) {
+          const rect: SelectionRect = { x1: rectStartRef.current.x, y1: rectStartRef.current.y, x2: e.x, y2: e.y }
+          selectionRectRef.current = rect
+          setSelectionRect(rect)
+          e.preventSigmaDefault()
+          e.original.preventDefault()
+        }
+      },
+
+      mouseup: () => {
+        // end single-node drag
+        if (dragNodeRef.current) {
+          sigma.getGraph().setNodeAttribute(dragNodeRef.current, 'highlighted', false)
+        }
+        isDraggingSingleRef.current = false
+        dragNodeRef.current = null
+
+        // end group drag
+        isDraggingGroupRef.current = false
+        groupDragStartRef.current = null
+        groupStartPositionsRef.current = new Map()
+
+        // finalise rectangle selection
+        const rect = selectionRectRef.current
+        if (rect && rectStartRef.current) {
+          const minX = Math.min(rect.x1, rect.x2), maxX = Math.max(rect.x1, rect.x2)
+          const minY = Math.min(rect.y1, rect.y2), maxY = Math.max(rect.y1, rect.y2)
+          const graph = sigma.getGraph()
+          const inside = graph.nodes().filter((n) => {
+            const displayData = sigma.getNodeDisplayData(n)
+            if (!displayData || displayData.hidden) return false
+            // compare in viewport pixels — same space as the rect coords
+            const vp = sigma.framedGraphToViewport(displayData)
+            return vp.x >= minX && vp.x <= maxX && vp.y >= minY && vp.y <= maxY
+          })
+          setSelectedNodes(new Set(inside))
+        }
+        rectStartRef.current = null
+        selectionRectRef.current = null
+        setSelectionRect(null)
+      },
+
+      mouseleave: () => {
+        if (dragNodeRef.current) sigma.getGraph().setNodeAttribute(dragNodeRef.current, 'highlighted', false)
+        isDraggingSingleRef.current = false
+        dragNodeRef.current = null
+      },
+
+      // click empty stage → clear selection
+      clickStage: () => {
+        if (selectModeRef.current && !isDraggingGroupRef.current) {
+          setSelectedNodes(new Set())
+        }
+      },
+    })
+  }, [registerEvents, sigma, setSettings])
+
+  return (
+    <>
+      {/* Keyboard shortcut: Escape exits select mode */}
+      {isSelectMode && (
+        <EscapeListener onEscape={() => { setIsSelectMode(false); setSelectedNodes(new Set()) }} />
+      )}
+
+      {/* Rectangle selection overlay */}
+      {selectionRect && (
+        <div
+          className="pointer-events-none absolute z-10"
+          style={{
+            left: Math.min(selectionRect.x1, selectionRect.x2),
+            top: Math.min(selectionRect.y1, selectionRect.y2),
+            width: Math.abs(selectionRect.x2 - selectionRect.x1),
+            height: Math.abs(selectionRect.y2 - selectionRect.y1),
+            border: '1.5px dashed #6366f1',
+            backgroundColor: 'rgba(99,102,241,0.08)',
+          }}
+        />
+      )}
+
+      {/* Selection count badge */}
+      {selectedNodes.size > 0 && (
+        <div className="pointer-events-none absolute left-3 top-3 z-10 rounded border border-indigo-700 bg-card/90 px-2 py-0.5 text-[10px] font-mono text-indigo-400 backdrop-blur-sm">
+          {selectedNodes.size} node{selectedNodes.size !== 1 ? 's' : ''} selected
+        </div>
+      )}
+    </>
+  )
+}
+
+function EscapeListener({ onEscape }: { onEscape: () => void }) {
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onEscape() }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [onEscape])
   return null
 }
 
@@ -536,6 +692,7 @@ function useGraphStats(triples: RdfTriple[]) {
 export function PreviewView() {
   const { nodes } = useRdfGraph()
   const [subView, setSubView] = useState<SubView>('table')
+  const [isSelectMode, setIsSelectMode] = useState(false)
   const triples = useActualTriples()
   const { totalSubjects, shownSubjects, isSampled } = useGraphStats(triples)
 
@@ -637,13 +794,27 @@ export function PreviewView() {
             >
               <InstanceGraphLoader triples={triples} />
               <GraphSearch />
-              <DragAndDrop />
-              <HoverHighlight />
+              <InteractionManager isSelectMode={isSelectMode} setIsSelectMode={setIsSelectMode} />
               <ControlsContainer position="bottom-right">
                 <ZoomControl />
                 <LayoutForceAtlas2Control
                   settings={{ gravity: 1, scalingRatio: 6, adjustSizes: true }}
                 />
+                <button
+                  title={isSelectMode ? 'Exit select mode (Esc)' : 'Select mode — draw a rectangle to select nodes'}
+                  onClick={() => setIsSelectMode((m) => !m)}
+                  className={cn(
+                    'flex h-8 w-8 items-center justify-center transition-colors',
+                    isSelectMode ? 'text-primary' : 'text-[#999] hover:text-foreground'
+                  )}
+                >
+                  <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                    <rect x="1.5" y="1.5" width="5" height="5" strokeDasharray="2 1.5" />
+                    <rect x="9.5" y="1.5" width="5" height="5" strokeDasharray="2 1.5" />
+                    <rect x="1.5" y="9.5" width="5" height="5" strokeDasharray="2 1.5" />
+                    <rect x="9.5" y="9.5" width="5" height="5" strokeDasharray="2 1.5" />
+                  </svg>
+                </button>
               </ControlsContainer>
             </SigmaContainer>
           ) : (
