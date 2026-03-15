@@ -12,39 +12,48 @@ import { Input } from '@/components/ui/input'
 interface EdgeLabelDialogProps {
   open: boolean
   initialValue?: string
+  initialBidirectional?: boolean
+  initialReverseLabel?: string
   title?: string
   confirmLabel?: string
   placeholder?: string
-  onConfirm: (label: string) => void
+  onConfirm: (label: string, bidirectional: boolean, reverseLabel: string) => void
   onCancel: () => void
 }
 
 export function EdgeLabelDialog({
   open,
   initialValue = '',
+  initialBidirectional = false,
+  initialReverseLabel = '',
   title = 'Name this connection',
   confirmLabel = 'Add connection',
-  placeholder = 'e.g. ex:hasAttribute, schema:knows',
+  placeholder = 'e.g. ex:hasOrder, schema:knows',
   onConfirm,
   onCancel
 }: EdgeLabelDialogProps) {
   const [label, setLabel] = useState('')
+  const [bidirectional, setBidirectional] = useState(false)
+  const [reverseLabel, setReverseLabel] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
+  const reverseInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (open) {
       setLabel(initialValue)
+      setBidirectional(initialBidirectional)
+      setReverseLabel(initialReverseLabel)
       setTimeout(() => {
         inputRef.current?.focus()
         inputRef.current?.select()
       }, 50)
     }
-  }, [open, initialValue])
+  }, [open, initialValue, initialBidirectional, initialReverseLabel])
 
   function handleConfirm() {
     const trimmed = label.trim()
     if (!trimmed) return
-    onConfirm(trimmed)
+    onConfirm(trimmed, bidirectional, reverseLabel.trim())
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
@@ -52,21 +61,77 @@ export function EdgeLabelDialog({
     if (e.key === 'Escape') onCancel()
   }
 
+  function handleToggleBidirectional() {
+    const next = !bidirectional
+    setBidirectional(next)
+    if (next) {
+      setTimeout(() => {
+        reverseInputRef.current?.focus()
+      }, 50)
+    }
+  }
+
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onCancel()}>
-      <DialogContent className="sm:max-w-[360px]">
+      <DialogContent className="sm:max-w-[400px]">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
-        <div className="py-2">
-          <Input
-            ref={inputRef}
-            placeholder={placeholder}
-            value={label}
-            onChange={(e) => setLabel(e.target.value)}
-            onKeyDown={handleKeyDown}
-            className="font-mono text-sm"
-          />
+        <div className="flex flex-col gap-3 py-2">
+          {/* Direction toggle */}
+          <button
+            type="button"
+            onClick={handleToggleBidirectional}
+            className={[
+              'flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition-colors',
+              bidirectional
+                ? 'border-primary bg-primary/10 text-primary'
+                : 'border-border bg-transparent text-muted-foreground hover:text-foreground'
+            ].join(' ')}
+          >
+            <span className="text-base leading-none">
+              {bidirectional ? '↔' : '→'}
+            </span>
+            {bidirectional ? 'Bidirectional' : 'One-way'}
+            <span className="ml-auto text-xs opacity-60">
+              {bidirectional ? 'triples in both directions' : 'triples source → target'}
+            </span>
+          </button>
+
+          {/* Forward predicate */}
+          <div className="flex flex-col gap-1">
+            {bidirectional && (
+              <label className="text-xs text-muted-foreground pl-1">
+                {'\u2192'} Forward predicate
+              </label>
+            )}
+            <Input
+              ref={inputRef}
+              placeholder={placeholder}
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+              onKeyDown={handleKeyDown}
+              className="font-mono text-sm"
+            />
+          </div>
+
+          {/* Reverse predicate — only shown when bidirectional */}
+          {bidirectional && (
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-muted-foreground pl-1">
+                {'\u2190'} Reverse predicate{' '}
+                <span className="opacity-60">(leave blank to reuse forward)</span>
+              </label>
+              <Input
+                ref={reverseInputRef}
+                placeholder={placeholder}
+                value={reverseLabel}
+                onChange={(e) => setReverseLabel(e.target.value)}
+                onKeyDown={handleKeyDown}
+                className="font-mono text-sm"
+              />
+            </div>
+          )}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onCancel}>

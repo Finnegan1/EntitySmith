@@ -18,6 +18,7 @@ export function ColoredEdge({
   style,
   label,
   markerEnd,
+  markerStart,
   data
 }: EdgeProps) {
   const { setEdges, screenToFlowPosition } = useReactFlow()
@@ -72,7 +73,7 @@ export function ColoredEdge({
 
   return (
     <>
-      <BaseEdge id={id} path={edgePath} style={style} markerEnd={markerEnd} />
+      <BaseEdge id={id} path={edgePath} style={style} markerEnd={markerEnd} markerStart={markerStart} />
       {label && (
         <EdgeLabelRenderer>
           <div
@@ -82,21 +83,42 @@ export function ColoredEdge({
               background: '#1e293b',
               border: `1px solid ${color}`,
               color,
-              padding: '2px 6px',
+              padding: '3px 7px',
               borderRadius: 4,
               fontSize: 11,
               fontWeight: 600,
               pointerEvents: 'all',
               whiteSpace: 'nowrap',
               cursor: 'ew-resize',
-              userSelect: 'none'
+              userSelect: 'none',
+              lineHeight: '1.5',
             }}
             className="nodrag nopan"
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
           >
-            {String(label)}
+            {data?.bidirectional ? (() => {
+              const dx = targetX - sourceX
+              const dy = targetY - sourceY
+              const fwd = Math.abs(dx) >= Math.abs(dy)
+                ? (dx >= 0 ? '→' : '←')
+                : (dy >= 0 ? '↓' : '↑')
+              const rev = Math.abs(dx) >= Math.abs(dy)
+                ? (dx >= 0 ? '←' : '→')
+                : (dy >= 0 ? '↑' : '↓')
+              const showBoth = String(data.forwardLabel) !== String(data.reverseLabel)
+              return (
+                <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
+                  <span>{fwd} {String(data.forwardLabel)}</span>
+                  {showBoth && (
+                    <span style={{ opacity: 0.75 }}>{rev} {String(data.reverseLabel)}</span>
+                  )}
+                </span>
+              )
+            })() : (
+              String(label)
+            )}
           </div>
         </EdgeLabelRenderer>
       )}

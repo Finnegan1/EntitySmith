@@ -13,7 +13,8 @@
       "launch_date": "2022-11-16",
       "mission_category": "lunar_flyby",
       "target_body": "Moon",
-      "outcome": "success"
+      "outcome": "success",
+      "test": "h"
     },
     {
       "mission_id": "crew1",
@@ -24,7 +25,8 @@
       "launch_date": "2020-11-16",
       "mission_category": "crew_transport",
       "target_body": "Low Earth Orbit",
-      "outcome": "success"
+      "outcome": "success",
+      "test": "h"
     },
     {
       "mission_id": "chandrayaan3",
@@ -35,7 +37,8 @@
       "launch_date": "2023-07-14",
       "mission_category": "lunar_lander",
       "target_body": "Moon",
-      "outcome": "success"
+      "outcome": "success",
+      "test": "h"
     },
     {
       "mission_id": "juice",
@@ -46,7 +49,8 @@
       "launch_date": "2023-04-14",
       "mission_category": "planetary_science",
       "target_body": "Jupiter System",
-      "outcome": "success"
+      "outcome": "success",
+      "test": "h"
     },
     {
       "mission_id": "tianwen1",
@@ -57,7 +61,8 @@
       "launch_date": "2020-07-23",
       "mission_category": "mars_exploration",
       "target_body": "Mars",
-      "outcome": "success"
+      "outcome": "success",
+      "test": "h"
     },
     {
       "mission_id": "soyuz_ms24",
@@ -68,7 +73,8 @@
       "launch_date": "2023-09-15",
       "mission_category": "crew_transport",
       "target_body": "Low Earth Orbit",
-      "outcome": "success"
+      "outcome": "success",
+      "test": "h"
     },
     {
       "mission_id": "slim",
@@ -79,7 +85,8 @@
       "launch_date": "2023-09-06",
       "mission_category": "lunar_lander",
       "target_body": "Moon",
-      "outcome": "success"
+      "outcome": "success",
+      "test": "h"
     },
     {
       "mission_id": "transporter8",
@@ -90,7 +97,8 @@
       "launch_date": "2023-06-12",
       "mission_category": "rideshare",
       "target_body": "Sun-Synchronous Orbit",
-      "outcome": "success"
+      "outcome": "success",
+      "test": "h"
     }
   ]
 }

@@ -91,7 +91,10 @@ function useActualTriples(): RdfTriple[] {
 
       const sourceAttr = attrFromHandle(edge.sourceHandle)
       const targetAttr = attrFromHandle(edge.targetHandle)
-      const predicate = String(edge.label ?? edge.id)
+      const forwardPredicate = String((edge.data?.forwardLabel as string) ?? edge.label ?? edge.id)
+      const reversePredicate = String((edge.data?.reverseLabel as string) ?? forwardPredicate)
+
+      const bidirectional = (edge.data?.bidirectional as boolean) ?? false
 
       for (const sourceRow of sourceFile.dataset.data) {
         const srcSubjectVal = String(sourceRow[sourceNode.data.subjectColumn] ?? '')
@@ -106,7 +109,10 @@ function useActualTriples(): RdfTriple[] {
           const tgtSubjectVal = String(targetRow[targetNode.data.subjectColumn] ?? '')
           if (!tgtSubjectVal) continue
           const object = makeSubjectIri(targetNode.data.rdfClass, tgtSubjectVal)
-          result.push({ subject, predicate, object, isLiteral: false })
+          result.push({ subject, predicate: forwardPredicate, object, isLiteral: false })
+          if (bidirectional) {
+            result.push({ subject: object, predicate: reversePredicate, object: subject, isLiteral: false })
+          }
         }
       }
     }

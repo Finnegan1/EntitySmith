@@ -32,9 +32,11 @@ interface RdfGraphState {
   deleteNode: (nodeId: string) => void
   deleteEdge: (edgeId: string) => void
   startRenameEdge: (edgeId: string) => void
-  confirmRenameEdge: (label: string) => void
+  confirmRenameEdge: (label: string, bidirectional: boolean, reverseLabel: string) => void
   cancelRenameEdge: () => void
-  confirmConnection: (label: string) => void
+  renamingEdgeBidirectional: boolean
+  renamingEdgeReverseLabel: string
+  confirmConnection: (label: string, bidirectional: boolean, reverseLabel: string) => void
   cancelConnection: () => void
   setPendingConnection: (connection: PendingConnection | null) => void
   onConnect: (connection: Connection) => void
@@ -115,10 +117,21 @@ export function useRdfGraphState(): RdfGraphState {
   }, [])
 
   const confirmRenameEdge = useCallback(
-    (label: string) => {
+    (label: string, bidirectional: boolean, reverseLabel: string) => {
       if (!renamingEdgeId) return
       setEdges((eds) =>
-        eds.map((e) => (e.id === renamingEdgeId ? { ...e, label } : e))
+        eds.map((e) => {
+          if (e.id !== renamingEdgeId) return e
+          const color = (e.style?.stroke as string) ?? '#6366f1'
+          const effectiveReverseLabel = reverseLabel || label
+          return {
+            ...e,
+            label: bidirectional ? `${label} / ${effectiveReverseLabel}` : label,
+            data: { ...e.data, bidirectional, forwardLabel: label, reverseLabel: effectiveReverseLabel },
+            markerEnd: { type: 'arrowclosed' as const, color },
+            markerStart: bidirectional ? { type: 'arrowclosed' as const, color } : undefined,
+          }
+        })
       )
       setRenamingEdgeId(null)
     },
@@ -139,7 +152,7 @@ export function useRdfGraphState(): RdfGraphState {
   }, [])
 
   const confirmConnection = useCallback(
-    (label: string) => {
+    (label: string, bidirectional: boolean, reverseLabel: string) => {
       if (!pendingConnection) return
       setEdges((eds) => {
         const color = EDGE_COLORS[eds.length % EDGE_COLORS.length]
@@ -150,18 +163,20 @@ export function useRdfGraphState(): RdfGraphState {
             (e.source === target && e.target === source)
         ).length
         const pathFraction = PATH_FRACTIONS[parallelCount % PATH_FRACTIONS.length]
+        const effectiveReverseLabel = reverseLabel || label
         const newEdge: Edge = {
           id: `${pendingConnection.source}-${pendingConnection.sourceHandle ?? ''}-${pendingConnection.target}-${pendingConnection.targetHandle ?? ''}-${Date.now()}`,
           source: pendingConnection.source,
           sourceHandle: pendingConnection.sourceHandle,
           target: pendingConnection.target,
           targetHandle: pendingConnection.targetHandle,
-          label,
+          label: bidirectional ? `${label} / ${effectiveReverseLabel}` : label,
           type: 'colored',
           animated: false,
-          data: { pathFraction },
+          data: { pathFraction, bidirectional, forwardLabel: label, reverseLabel: effectiveReverseLabel },
           style: { stroke: color, strokeWidth: 2 },
-          markerEnd: { type: 'arrowclosed' as const, color }
+          markerEnd: { type: 'arrowclosed' as const, color },
+          markerStart: bidirectional ? { type: 'arrowclosed' as const, color } : undefined,
         }
         return addEdge(newEdge, eds)
       })
@@ -212,12 +227,21 @@ export function useRdfGraphState(): RdfGraphState {
     []
   )
 
+  const renamingEdge = renamingEdgeId ? edges.find((e) => e.id === renamingEdgeId) : undefined
+  const renamingEdgeBidirectional = (renamingEdge?.data?.bidirectional as boolean) ?? false
+  const renamingEdgeReverseLabel =
+    renamingEdge?.data?.bidirectional
+      ? ((renamingEdge.data?.reverseLabel as string) ?? '')
+      : ''
+
   return {
     nodes,
     edges,
     canvasNodeIds,
     pendingConnection,
     renamingEdgeId,
+    renamingEdgeBidirectional,
+    renamingEdgeReverseLabel,
     onNodesChange,
     onEdgesChange,
     addDatasetNode,

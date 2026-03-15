@@ -36,6 +36,8 @@ function RdfCanvasInner() {
     edges,
     pendingConnection,
     renamingEdgeId,
+    renamingEdgeBidirectional,
+    renamingEdgeReverseLabel,
     onNodesChange,
     onEdgesChange,
     onConnect,
@@ -119,7 +121,9 @@ function RdfCanvasInner() {
 
   const renamingEdgeCurrentLabel = useMemo(() => {
     if (!renamingEdgeId) return ''
-    return String(edges.find((e) => e.id === renamingEdgeId)?.label ?? '')
+    const edge = edges.find((e) => e.id === renamingEdgeId)
+    // Use stored forwardLabel if available (avoids showing "forward / reverse" combined string)
+    return String((edge?.data?.forwardLabel as string) ?? edge?.label ?? '')
   }, [renamingEdgeId, edges])
 
   const defaultEdgeOptions = useMemo(() => ({ type: 'colored' as const }), [])
@@ -173,6 +177,8 @@ function RdfCanvasInner() {
       <EdgeLabelDialog
         open={renamingEdgeId !== null}
         initialValue={renamingEdgeCurrentLabel}
+        initialBidirectional={renamingEdgeBidirectional}
+        initialReverseLabel={renamingEdgeReverseLabel}
         title="Rename predicate"
         confirmLabel="Save"
         onConfirm={confirmRenameEdge}
