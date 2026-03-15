@@ -2,12 +2,16 @@ import { useEffect, useMemo, useState } from 'react'
 import { DirectedGraph } from 'graphology'
 import { SigmaContainer, useLoadGraph, ControlsContainer, ZoomControl } from '@react-sigma/core'
 import '@react-sigma/core/lib/style.css'
+import { Link2 } from 'lucide-react'
 
 import { useRdfGraph } from '@/hooks/use-rdf-graph'
 import { useWorkspaces } from '@/hooks/use-workspaces'
+import { useDatabases } from '@/hooks/use-database'
+import { useConnectionProposals } from '@/hooks/use-connection-proposals'
 import { cn } from '@/lib/utils'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { RdfCanvas } from './rdf-view/rdf-canvas'
+import { ConnectionProposalsPanel } from './rdf-view/connection-proposals-panel'
 
 type RdfSubView = 'canvas' | 'schema' | 'ontology'
 
@@ -83,14 +87,21 @@ function SchemaGraphLoader({
 function useSchemaGraph() {
   const { nodes, edges } = useRdfGraph()
   const { activeProject } = useWorkspaces()
+  const { dbTableRows } = useDatabases()
 
   return useMemo(() => {
     const schemaNodes: SchemaNode[] = nodes.map((n, i) => {
-      const file = activeProject?.files.find((f) => f.path === n.data.filePath)
+      let instanceCount: number
+      if (n.data.dbSourcePath && n.data.dbTableName) {
+        instanceCount = dbTableRows.get(n.id as string)?.length ?? 0
+      } else {
+        const file = activeProject?.files.find((f) => f.path === n.data.filePath)
+        instanceCount = file?.dataset?.data.length ?? 0
+      }
       return {
         id: n.id,
         rdfClass: n.data.rdfClass || n.data.datasetName,
-        instanceCount: file?.dataset?.data.length ?? 0,
+        instanceCount,
         color: PALETTE[i % PALETTE.length],
       }
     })
@@ -107,7 +118,7 @@ function useSchemaGraph() {
     })
 
     return { schemaNodes, schemaEdges }
-  }, [nodes, edges, activeProject])
+  }, [nodes, edges, activeProject, dbTableRows])
 }
 
 function SchemaGraphView() {
@@ -263,6 +274,9 @@ function OntologyTable() {
 
 export function RdfView() {
   const [subView, setSubView] = useState<RdfSubView>('canvas')
+  const [showProposals, setShowProposals] = useState(true)
+  const { proposals } = useConnectionProposals()
+  const pendingCount = proposals.filter((p) => !p.dismissed).length
 
   const TAB_LABELS: Record<RdfSubView, string> = {
     canvas: 'Canvas',
@@ -287,11 +301,36 @@ export function RdfView() {
             {TAB_LABELS[v]}
           </button>
         ))}
+
+        {/* Suggested connections toggle — only relevant on the Canvas tab */}
+        {subView === 'canvas' && (
+          <div className="ml-auto flex items-center px-2">
+            <button
+              onClick={() => setShowProposals((v) => !v)}
+              title={showProposals ? 'Hide suggested connections' : 'Show suggested connections'}
+              className={cn(
+                'relative flex items-center gap-1.5 rounded px-2.5 py-1 text-[11px] font-medium transition-colors',
+                showProposals
+                  ? 'bg-accent text-foreground'
+                  : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'
+              )}
+            >
+              <Link2 className="h-3.5 w-3.5" />
+              <span>Suggestions</span>
+              {pendingCount > 0 && (
+                <span className="flex h-4 min-w-[16px] items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-bold text-white">
+                  {pendingCount}
+                </span>
+              )}
+            </button>
+          </div>
+        )}
       </div>
 
       {subView === 'canvas' ? (
-        <div className="flex-1 overflow-hidden">
+        <div className="flex flex-1 overflow-hidden">
           <RdfCanvas />
+          {showProposals && <ConnectionProposalsPanel />}
         </div>
       ) : subView === 'schema' ? (
         <div className="flex flex-1 flex-col overflow-hidden">

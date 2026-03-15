@@ -1,4 +1,4 @@
-import type { SaveDatasetPayload, RawFileResult } from './types'
+import type { SaveDatasetPayload, RawFileResult, DbTableSchema } from './types'
 
 interface WindowApi {
   openFolderDialog: () => Promise<string | null>
@@ -8,6 +8,10 @@ interface WindowApi {
   readWorkspaceFiles: (workspacePath: string) => Promise<RawFileResult[]>
   saveDataset: (payload: SaveDatasetPayload) => Promise<void>
   onMenuOpenProject: (cb: (path: string) => void) => () => void
+  // SQLite / Database
+  openDbFileDialog: () => Promise<string | null>
+  getDbSchema: (filePath: string) => Promise<DbTableSchema[]>
+  queryDbTable: (filePath: string, tableName: string) => Promise<Record<string, unknown>[]>
 }
 
 declare global {

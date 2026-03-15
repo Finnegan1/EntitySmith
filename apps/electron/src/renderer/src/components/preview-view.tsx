@@ -18,6 +18,7 @@ import { oneDark } from '@codemirror/theme-one-dark'
 import { useRdfGraph } from '@/hooks/use-rdf-graph'
 import { useWorkspaces } from '@/hooks/use-workspaces'
 import { usePrefixes } from '@/hooks/use-prefixes'
+import { useDatabases } from '@/hooks/use-database'
 import { makeSubjectIri, escapeTurtleLiteral } from '@/lib/rdf-inference'
 import { cn } from '@/lib/utils'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -52,20 +53,30 @@ const MAX_LITERALS_PER_SUBJECT = 3
 function useActualTriples(): RdfTriple[] {
   const { nodes, edges } = useRdfGraph()
   const { activeProject } = useWorkspaces()
+  const { dbTableRows } = useDatabases()
 
   return useMemo<RdfTriple[]>(() => {
     if (!activeProject) return []
     const result: RdfTriple[] = []
 
+    // Helper: resolve rows for a node regardless of whether it's a JSON file or DB table
+    function resolveRows(node: (typeof nodes)[number]) {
+      const { filePath, dbSourcePath, dbTableName } = node.data
+      if (dbSourcePath && dbTableName) {
+        return dbTableRows.get(filePath as string) ?? []
+      }
+      return activeProject.files.find((f) => f.path === filePath)?.dataset?.data ?? []
+    }
+
     // 1. Data property triples for each dataset node
     for (const node of nodes) {
-      const { rdfClass, subjectColumn, columnMappings, filePath, attributes } = node.data
+      const { rdfClass, subjectColumn, columnMappings, attributes } = node.data
       if (!rdfClass || !subjectColumn || !columnMappings) continue
 
-      const file = activeProject.files.find((f) => f.path === filePath)
-      if (!file?.dataset) continue
+      const rows = resolveRows(node)
+      if (rows.length === 0) continue
 
-      for (const row of file.dataset.data) {
+      for (const row of rows) {
         const subjectVal = String(row[subjectColumn] ?? '')
         if (!subjectVal) continue
         const subject = makeSubjectIri(rdfClass, subjectVal)
@@ -95,24 +106,23 @@ function useActualTriples(): RdfTriple[] {
       const targetNode = nodes.find((n) => n.id === edge.target)
       if (!sourceNode || !targetNode) continue
 
-      const sourceFile = activeProject.files.find((f) => f.path === sourceNode.data.filePath)
-      const targetFile = activeProject.files.find((f) => f.path === targetNode.data.filePath)
-      if (!sourceFile?.dataset || !targetFile?.dataset) continue
+      const sourceRows = resolveRows(sourceNode)
+      const targetRows = resolveRows(targetNode)
+      if (sourceRows.length === 0 || targetRows.length === 0) continue
 
       const sourceAttr = attrFromHandle(edge.sourceHandle)
       const targetAttr = attrFromHandle(edge.targetHandle)
       const forwardPredicate = String((edge.data?.forwardLabel as string) ?? edge.label ?? edge.id)
       const reversePredicate = String((edge.data?.reverseLabel as string) ?? forwardPredicate)
-
       const bidirectional = (edge.data?.bidirectional as boolean) ?? false
 
-      for (const sourceRow of sourceFile.dataset.data) {
+      for (const sourceRow of sourceRows) {
         const srcSubjectVal = String(sourceRow[sourceNode.data.subjectColumn] ?? '')
         if (!srcSubjectVal) continue
         const subject = makeSubjectIri(sourceNode.data.rdfClass, srcSubjectVal)
 
         const joinVal = String(sourceRow[sourceAttr] ?? '')
-        const matched = targetFile.dataset.data.filter(
+        const matched = targetRows.filter(
           (tr) => String(tr[targetAttr] ?? '') === joinVal
         )
         for (const targetRow of matched) {
@@ -128,7 +138,7 @@ function useActualTriples(): RdfTriple[] {
     }
 
     return result
-  }, [nodes, edges, activeProject])
+  }, [nodes, edges, activeProject, dbTableRows])
 }
 
 // ── Turtle serializer ─────────────────────────────────────────────────────────
