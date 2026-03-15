@@ -434,9 +434,7 @@ function GraphSearch() {
   )
 }
 
-// ── Interaction manager (drag, hover highlight, rect-select + group drag) ─────
-
-type SelectionRect = { x1: number; y1: number; x2: number; y2: number }
+// ── Interaction manager (drag, hover highlight, multi-select + group drag) ────
 
 function InteractionManager({
   isSelectMode,
@@ -449,17 +447,12 @@ function InteractionManager({
   const registerEvents = useRegisterEvents()
   const setSettings = useSetSettings()
 
-  // ── reactive state (drives re-render for overlay & settings) ────────────────
   const [selectedNodes, setSelectedNodes] = useState<Set<string>>(new Set())
   const [hoveredNode, setHoveredNode] = useState<string | null>(null)
-  const [selectionRect, setSelectionRect] = useState<SelectionRect | null>(null)
 
-  // ── refs (readable inside event callbacks without stale closures) ───────────
+  // refs — readable inside event callbacks without stale closures
   const selectModeRef = useRef(false)
   const selectedRef = useRef<Set<string>>(new Set())
-  const hoveredRef = useRef<string | null>(null)
-  const rectStartRef = useRef<{ x: number; y: number } | null>(null)
-  const selectionRectRef = useRef<SelectionRect | null>(null)
   // single-node drag
   const dragNodeRef = useRef<string | null>(null)
   const isDraggingSingleRef = useRef(false)
@@ -471,28 +464,25 @@ function InteractionManager({
   // keep refs in sync with state
   useEffect(() => { selectModeRef.current = isSelectMode }, [isSelectMode])
   useEffect(() => { selectedRef.current = selectedNodes }, [selectedNodes])
-  useEffect(() => { hoveredRef.current = hoveredNode }, [hoveredNode])
 
   // cursor feedback
   useEffect(() => {
     const el = sigma.getContainer()
-    el.style.cursor = isSelectMode ? 'crosshair' : ''
+    el.style.cursor = isSelectMode ? 'cell' : ''
     return () => { el.style.cursor = '' }
   }, [isSelectMode, sigma])
 
-  // ── unified nodeReducer / edgeReducer ───────────────────────────────────────
+  // unified nodeReducer / edgeReducer
   useEffect(() => {
     const graph = sigma.getGraph()
     const sel = selectedNodes
     const hov = hoveredNode
 
-    // nothing active → clear reducers
     if (sel.size === 0 && !hov) {
       setSettings({ nodeReducer: null, edgeReducer: null })
       return
     }
 
-    // precompute hovered neighbourhood once (captured in closure, not recomputed per node)
     const hovNeighbors = hov ? new Set([hov, ...graph.neighbors(hov)]) : null
     const hovEdges = hov ? new Set(graph.edges(hov)) : null
 
@@ -509,10 +499,9 @@ function InteractionManager({
     })
   }, [selectedNodes, hoveredNode, sigma, setSettings])
 
-  // ── event registration (runs once; all mutable state accessed via refs) ─────
+  // event registration (runs once; mutable state accessed via refs)
   useEffect(() => {
     registerEvents({
-      // hover
       enterNode: (e) => setHoveredNode(e.node),
       leaveNode: () => setHoveredNode(null),
 
@@ -541,20 +530,11 @@ function InteractionManager({
             })
           }
         } else {
-          // pan mode: single-node drag
+          // normal mode: single-node drag
           isDraggingSingleRef.current = true
           dragNodeRef.current = e.node
           sigma.getGraph().setNodeAttribute(e.node, 'highlighted', true)
         }
-      },
-
-      downStage: (e) => {
-        if (!selectModeRef.current) return
-        rectStartRef.current = { x: e.event.x, y: e.event.y }
-        const rect: SelectionRect = { x1: e.event.x, y1: e.event.y, x2: e.event.x, y2: e.event.y }
-        selectionRectRef.current = rect
-        setSelectionRect(rect)
-        e.preventSigmaDefault()
       },
 
       mousemovebody: (e) => {
@@ -579,49 +559,18 @@ function InteractionManager({
           }
           e.preventSigmaDefault()
           e.original.preventDefault()
-          return
-        }
-
-        if (rectStartRef.current) {
-          const rect: SelectionRect = { x1: rectStartRef.current.x, y1: rectStartRef.current.y, x2: e.x, y2: e.y }
-          selectionRectRef.current = rect
-          setSelectionRect(rect)
-          e.preventSigmaDefault()
-          e.original.preventDefault()
         }
       },
 
       mouseup: () => {
-        // end single-node drag
         if (dragNodeRef.current) {
           sigma.getGraph().setNodeAttribute(dragNodeRef.current, 'highlighted', false)
         }
         isDraggingSingleRef.current = false
         dragNodeRef.current = null
-
-        // end group drag
         isDraggingGroupRef.current = false
         groupDragStartRef.current = null
         groupStartPositionsRef.current = new Map()
-
-        // finalise rectangle selection
-        const rect = selectionRectRef.current
-        if (rect && rectStartRef.current) {
-          const minX = Math.min(rect.x1, rect.x2), maxX = Math.max(rect.x1, rect.x2)
-          const minY = Math.min(rect.y1, rect.y2), maxY = Math.max(rect.y1, rect.y2)
-          const graph = sigma.getGraph()
-          const inside = graph.nodes().filter((n) => {
-            const displayData = sigma.getNodeDisplayData(n)
-            if (!displayData || displayData.hidden) return false
-            // compare in viewport pixels — same space as the rect coords
-            const vp = sigma.framedGraphToViewport(displayData)
-            return vp.x >= minX && vp.x <= maxX && vp.y >= minY && vp.y <= maxY
-          })
-          setSelectedNodes(new Set(inside))
-        }
-        rectStartRef.current = null
-        selectionRectRef.current = null
-        setSelectionRect(null)
       },
 
       mouseleave: () => {
@@ -630,7 +579,6 @@ function InteractionManager({
         dragNodeRef.current = null
       },
 
-      // click empty stage → clear selection
       clickStage: () => {
         if (selectModeRef.current && !isDraggingGroupRef.current) {
           setSelectedNodes(new Set())
@@ -641,27 +589,9 @@ function InteractionManager({
 
   return (
     <>
-      {/* Keyboard shortcut: Escape exits select mode */}
       {isSelectMode && (
         <EscapeListener onEscape={() => { setIsSelectMode(false); setSelectedNodes(new Set()) }} />
       )}
-
-      {/* Rectangle selection overlay */}
-      {selectionRect && (
-        <div
-          className="pointer-events-none absolute z-10"
-          style={{
-            left: Math.min(selectionRect.x1, selectionRect.x2),
-            top: Math.min(selectionRect.y1, selectionRect.y2),
-            width: Math.abs(selectionRect.x2 - selectionRect.x1),
-            height: Math.abs(selectionRect.y2 - selectionRect.y1),
-            border: '1.5px dashed #6366f1',
-            backgroundColor: 'rgba(99,102,241,0.08)',
-          }}
-        />
-      )}
-
-      {/* Selection count badge */}
       {selectedNodes.size > 0 && (
         <div className="pointer-events-none absolute left-3 top-3 z-10 rounded border border-indigo-700 bg-card/90 px-2 py-0.5 text-[10px] font-mono text-indigo-400 backdrop-blur-sm">
           {selectedNodes.size} node{selectedNodes.size !== 1 ? 's' : ''} selected
@@ -811,18 +741,19 @@ export function PreviewView() {
                   settings={{ gravity: 1, scalingRatio: 6, adjustSizes: true }}
                 />
                 <button
-                  title={isSelectMode ? 'Exit select mode (Esc)' : 'Select mode — draw a rectangle to select nodes'}
+                  title={isSelectMode ? 'Exit multiselect (Esc)' : 'Multiselect — click nodes to select, drag selection to move'}
                   onClick={() => setIsSelectMode((m) => !m)}
                   className={cn(
                     'flex h-8 w-8 items-center justify-center transition-colors',
                     isSelectMode ? 'text-primary' : 'text-[#999] hover:text-foreground'
                   )}
                 >
-                  <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                    <rect x="1.5" y="1.5" width="5" height="5" strokeDasharray="2 1.5" />
-                    <rect x="9.5" y="1.5" width="5" height="5" strokeDasharray="2 1.5" />
-                    <rect x="1.5" y="9.5" width="5" height="5" strokeDasharray="2 1.5" />
-                    <rect x="9.5" y="9.5" width="5" height="5" strokeDasharray="2 1.5" />
+                  <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="4.5" cy="4.5" r="2" />
+                    <circle cx="11.5" cy="4.5" r="2" />
+                    <circle cx="4.5" cy="11.5" r="2" />
+                    <circle cx="11.5" cy="11.5" r="2" />
+                    <path d="M4.5 6.5v3M6.5 4.5h3M6.5 11.5h3M11.5 6.5v3" strokeOpacity="0.5" />
                   </svg>
                 </button>
               </ControlsContainer>
