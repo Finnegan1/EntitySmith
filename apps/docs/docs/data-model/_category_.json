@@ -1,8 +1,0 @@
-{
-  "label": "Data Model",
-  "position": 4,
-  "link": {
-    "type": "generated-index",
-    "description": "The dataset schema the app expects and the validation rules it enforces."
-  }
-}

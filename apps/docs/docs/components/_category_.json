@@ -1,8 +1,0 @@
-{
-  "label": "Components",
-  "position": 5,
-  "link": {
-    "type": "generated-index",
-    "description": "Reference for every UI component — what it renders, what state it reads, and how it behaves."
-  }
-}
