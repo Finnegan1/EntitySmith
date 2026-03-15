@@ -1,6 +1,16 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { DirectedGraph } from 'graphology'
-import { SigmaContainer, useLoadGraph, ControlsContainer, ZoomControl } from '@react-sigma/core'
+import {
+  SigmaContainer,
+  useLoadGraph,
+  useRegisterEvents,
+  useSetSettings,
+  useSigma,
+  ControlsContainer,
+  ZoomControl,
+} from '@react-sigma/core'
+import { LayoutForceAtlas2Control } from '@react-sigma/layout-forceatlas2'
+import forceAtlas2 from 'graphology-layout-forceatlas2'
 import '@react-sigma/core/lib/style.css'
 import CodeMirror from '@uiw/react-codemirror'
 import { oneDark } from '@codemirror/theme-one-dark'
@@ -182,6 +192,10 @@ function extractLiteralValue(literal: string): string {
   return raw.length > 18 ? raw.slice(0, 16) + '…' : raw
 }
 
+function edgeLocalLabel(predicate: string): string {
+  return predicate.includes(':') ? predicate.split(':')[1] : predicate
+}
+
 function InstanceGraphLoader({ triples }: { triples: RdfTriple[] }) {
   const loadGraph = useLoadGraph()
   const { nodes: rdfNodes } = useRdfGraph()
@@ -196,11 +210,9 @@ function InstanceGraphLoader({ triples }: { triples: RdfTriple[] }) {
     })
 
     // Collect subjects per class, capped
-    const subjectClass = new Map<string, string>()
     const classBuckets = new Map<string, string[]>()
     for (const t of triples) {
       if (t.predicate === 'rdf:type') {
-        subjectClass.set(t.subject, t.object)
         const bucket = classBuckets.get(t.object) ?? []
         if (bucket.length < MAX_PER_CLASS) {
           bucket.push(t.subject)
@@ -209,35 +221,79 @@ function InstanceGraphLoader({ triples }: { triples: RdfTriple[] }) {
       }
     }
 
-    const includedSubjects = new Set(
-      [...classBuckets.values()].flat()
-    )
+    const includedSubjects = new Set([...classBuckets.values()].flat())
 
-    // Layout: classes as columns, instances as rows within each column
+    // Add URI nodes with staggered initial positions (ForceAtlas2 needs valid x/y)
     const classOrder = [...classBuckets.keys()]
-    const nodePos = new Map<string, { x: number; y: number }>()
-
     classOrder.forEach((cls, colIdx) => {
       const members = classBuckets.get(cls)!
       const color = classColor.get(cls) ?? PALETTE[colIdx % PALETTE.length]
-      // Column header (class label) — shown via the first node's position
-      const colX = colIdx * 7
+      const angleStep = (2 * Math.PI) / Math.max(members.length, 1)
+      const radius = 4 + members.length * 0.8
 
       members.forEach((subj, rowIdx) => {
-        const x = colX
-        const y = rowIdx * 2.5 - (members.length * 2.5) / 2
-        // Strip class prefix for compact label: "ex:User_42" → "42"
+        const angle = rowIdx * angleStep + (colIdx * Math.PI) / classOrder.length
+        const x = colIdx * 10 + Math.cos(angle) * radius
+        const y = Math.sin(angle) * radius
         const localPart = subj.replace(/^[^:]+:[^_]+_/, '')
         if (!graph.hasNode(subj)) {
           graph.addNode(subj, { label: localPart, x, y, size: 9, color })
-          nodePos.set(subj, { x, y })
         }
       })
     })
 
-    // Literal nodes + data property edges (capped per subject)
-    const literalsPerSubject = new Map<string, number>()
+    // Object property edges — detect bidirectional pairs and merge them
+    const objectTriples = triples.filter(
+      (t) =>
+        !t.isLiteral &&
+        t.predicate !== 'rdf:type' &&
+        includedSubjects.has(t.subject) &&
+        includedSubjects.has(t.object)
+    )
 
+    // Build a lookup: "subj||obj" → predicate label
+    const forwardLabels = new Map<string, string>()
+    for (const t of objectTriples) {
+      const key = `${t.subject}||${t.object}`
+      if (!forwardLabels.has(key)) forwardLabels.set(key, edgeLocalLabel(t.predicate))
+    }
+
+    // Add edges, merging A→B + B→A bidirectional pairs into one edge
+    const pairsSeen = new Set<string>()
+    for (const t of objectTriples) {
+      const fwdKey = `${t.subject}||${t.object}`
+      const revKey = `${t.object}||${t.subject}`
+
+      const canonKey = fwdKey < revKey ? fwdKey : revKey
+      if (pairsSeen.has(canonKey)) continue
+      pairsSeen.add(canonKey)
+
+      if (!graph.hasNode(t.subject) || !graph.hasNode(t.object)) continue
+
+      const isBidirectional = forwardLabels.has(revKey)
+      const fwdLabel = forwardLabels.get(fwdKey) ?? edgeLocalLabel(t.predicate)
+      const label = isBidirectional
+        ? `${fwdLabel} ⇄ ${forwardLabels.get(revKey)}`
+        : fwdLabel
+
+      graph.addEdge(t.subject, t.object, {
+        label,
+        forceLabel: true,
+        size: 2,
+        color: isBidirectional ? '#a855f7' : '#6366f1',
+      })
+    }
+
+    // ── Phase 1: run ForceAtlas2 on URI nodes only ────────────────────────────
+    // Literal nodes are excluded so they don't distort the layout of URI nodes.
+    const fa2Settings = forceAtlas2.inferSettings(graph)
+    forceAtlas2.assign(graph, {
+      iterations: 200,
+      settings: { ...fa2Settings, gravity: 1, scalingRatio: 6, adjustSizes: true },
+    })
+
+    // ── Phase 2: add literal nodes positioned around their settled subjects ───
+    const literalsPerSubject = new Map<string, number>()
     for (const t of triples) {
       if (!includedSubjects.has(t.subject) || !t.isLiteral) continue
       const count = literalsPerSubject.get(t.subject) ?? 0
@@ -245,22 +301,23 @@ function InstanceGraphLoader({ triples }: { triples: RdfTriple[] }) {
 
       const litNodeId = `__lit__${t.subject}||${t.predicate}`
       if (!graph.hasNode(litNodeId)) {
-        const sp = nodePos.get(t.subject) ?? { x: 0, y: 0 }
-        const offsetY = count * 1.6 - (MAX_LITERALS_PER_SUBJECT * 1.6) / 2
+        const sx = graph.getNodeAttribute(t.subject, 'x') as number
+        const sy = graph.getNodeAttribute(t.subject, 'y') as number
+        // Spread literals in a fan around the subject node
+        const spreadAngle = ((count + 0.5) / MAX_LITERALS_PER_SUBJECT) * Math.PI * 2
         graph.addNode(litNodeId, {
           label: extractLiteralValue(t.object),
-          x: sp.x + 3.5,
-          y: sp.y + offsetY,
+          x: sx + Math.cos(spreadAngle) * 4,
+          y: sy + Math.sin(spreadAngle) * 4,
           size: 5,
           color: '#22c55e',
         })
       }
 
       if (graph.hasNode(t.subject) && graph.hasNode(litNodeId)) {
-        // Extract local predicate name for edge label
-        const edgeLabel = t.predicate.includes(':') ? t.predicate.split(':')[1] : t.predicate
         graph.addEdge(t.subject, litNodeId, {
-          label: edgeLabel,
+          label: edgeLocalLabel(t.predicate),
+          forceLabel: true,
           size: 1,
           color: '#22c55e88',
         })
@@ -269,28 +326,190 @@ function InstanceGraphLoader({ triples }: { triples: RdfTriple[] }) {
       literalsPerSubject.set(t.subject, count + 1)
     }
 
-    // Object property edges (only between included subjects)
-    const edgeSeen = new Set<string>()
-    for (const t of triples) {
-      if (t.isLiteral || t.predicate === 'rdf:type') continue
-      if (!includedSubjects.has(t.subject) || !includedSubjects.has(t.object)) continue
-
-      const key = `${t.subject}→${t.predicate}→${t.object}`
-      if (edgeSeen.has(key)) continue
-      edgeSeen.add(key)
-
-      if (graph.hasNode(t.subject) && graph.hasNode(t.object)) {
-        const edgeLabel = t.predicate.includes(':') ? t.predicate.split(':')[1] : t.predicate
-        graph.addEdge(t.subject, t.object, {
-          label: edgeLabel,
-          size: 2,
-          color: '#6366f1',
-        })
-      }
-    }
-
     loadGraph(graph)
   }, [triples, rdfNodes, loadGraph])
+
+  return null
+}
+
+// ── Graph search ─────────────────────────────────────────────────────────────
+
+function GraphSearch() {
+  const sigma = useSigma()
+  const [query, setQuery] = useState('')
+  const [open, setOpen] = useState(false)
+  const selectedRef = useRef<string | null>(null)
+
+  const suggestions = useMemo(() => {
+    if (!query.trim()) return []
+    const q = query.toLowerCase()
+    const graph = sigma.getGraph()
+    return graph
+      .nodes()
+      .map((n) => ({ id: n, label: (graph.getNodeAttribute(n, 'label') as string) || n }))
+      .filter(({ label }) => label.toLowerCase().includes(q))
+      .slice(0, 8)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, sigma])
+
+  function selectNode(nodeId: string) {
+    const graph = sigma.getGraph()
+    if (selectedRef.current) graph.setNodeAttribute(selectedRef.current, 'highlighted', false)
+    graph.setNodeAttribute(nodeId, 'highlighted', true)
+    selectedRef.current = nodeId
+
+    const nodeData = sigma.getNodeDisplayData(nodeId)
+    if (nodeData) {
+      sigma.getCamera().animate(
+        { x: nodeData.x, y: nodeData.y, ratio: 0.15 },
+        { duration: 500 }
+      )
+    }
+    setQuery('')
+    setOpen(false)
+  }
+
+  function clearSelection() {
+    if (selectedRef.current) {
+      sigma.getGraph().setNodeAttribute(selectedRef.current, 'highlighted', false)
+      selectedRef.current = null
+    }
+    setQuery('')
+    setOpen(false)
+  }
+
+  // Clear on Escape
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') clearSelection() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sigma])
+
+  return (
+    <div className="absolute top-3 right-3 z-10 w-52">
+      <div className="relative">
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => { setQuery(e.target.value); setOpen(true) }}
+          onFocus={() => setOpen(true)}
+          onBlur={() => setTimeout(() => setOpen(false), 120)}
+          placeholder="Search nodes…"
+          className="w-full rounded border border-border bg-card/90 px-3 py-1.5 pr-7 text-xs text-foreground placeholder:text-muted-foreground backdrop-blur-sm focus:outline-none focus:ring-1 focus:ring-primary"
+        />
+        {(query || selectedRef.current) && (
+          <button
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            onMouseDown={(e) => { e.preventDefault(); clearSelection() }}
+          >
+            ✕
+          </button>
+        )}
+      </div>
+      {open && suggestions.length > 0 && (
+        <ul className="mt-1 max-h-48 overflow-auto rounded border border-border bg-card/95 py-1 shadow-lg backdrop-blur-sm">
+          {suggestions.map(({ id, label }) => (
+            <li
+              key={id}
+              onMouseDown={(e) => { e.preventDefault(); selectNode(id) }}
+              className="cursor-pointer px-3 py-1.5 text-xs text-foreground hover:bg-accent"
+            >
+              {label}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+// ── Drag and drop ─────────────────────────────────────────────────────────────
+
+function DragAndDrop() {
+  const sigma = useSigma()
+  const registerEvents = useRegisterEvents()
+  const draggedNodeRef = useRef<string | null>(null)
+  const isDraggingRef = useRef(false)
+
+  useEffect(() => {
+    registerEvents({
+      downNode: (event) => {
+        isDraggingRef.current = true
+        draggedNodeRef.current = event.node
+        // Prevent sigma from starting a camera pan
+        event.preventSigmaDefault()
+        sigma.getGraph().setNodeAttribute(event.node, 'highlighted', true)
+      },
+      mousemovebody: (event) => {
+        if (!isDraggingRef.current || !draggedNodeRef.current) return
+        // Convert viewport coords to graph coords and move the node
+        const pos = sigma.viewportToGraph(event)
+        sigma.getGraph().setNodeAttribute(draggedNodeRef.current, 'x', pos.x)
+        sigma.getGraph().setNodeAttribute(draggedNodeRef.current, 'y', pos.y)
+        // Prevent camera movement while dragging
+        event.preventSigmaDefault()
+        event.original.preventDefault()
+        event.original.stopPropagation()
+      },
+      mouseup: () => {
+        if (draggedNodeRef.current) {
+          sigma.getGraph().setNodeAttribute(draggedNodeRef.current, 'highlighted', false)
+        }
+        isDraggingRef.current = false
+        draggedNodeRef.current = null
+      },
+      // Also stop if mouse leaves the container
+      mouseleave: () => {
+        if (draggedNodeRef.current) {
+          sigma.getGraph().setNodeAttribute(draggedNodeRef.current, 'highlighted', false)
+        }
+        isDraggingRef.current = false
+        draggedNodeRef.current = null
+      },
+    })
+  }, [registerEvents, sigma])
+
+  return null
+}
+
+// ── Hover highlight ───────────────────────────────────────────────────────────
+
+function HoverHighlight() {
+  const sigma = useSigma()
+  const registerEvents = useRegisterEvents()
+  const setSettings = useSetSettings()
+  const [hoveredNode, setHoveredNode] = useState<string | null>(null)
+
+  useEffect(() => {
+    registerEvents({
+      enterNode: (event) => setHoveredNode(event.node),
+      leaveNode: () => setHoveredNode(null),
+    })
+  }, [registerEvents])
+
+  useEffect(() => {
+    if (!hoveredNode) {
+      setSettings({ nodeReducer: null, edgeReducer: null })
+      return
+    }
+
+    const graph = sigma.getGraph()
+    const neighbors = new Set(graph.neighbors(hoveredNode))
+    neighbors.add(hoveredNode)
+    const connectedEdges = new Set(graph.edges(hoveredNode))
+
+    setSettings({
+      nodeReducer: (node, data) => {
+        if (neighbors.has(node)) return { ...data, highlighted: true, zIndex: 1 }
+        return { ...data, color: '#1e293b', label: '', zIndex: 0 }
+      },
+      edgeReducer: (edge, data) => {
+        if (connectedEdges.has(edge)) return { ...data, zIndex: 1 }
+        return { ...data, color: '#1e293b', label: '', hidden: false, zIndex: 0 }
+      },
+    })
+  }, [hoveredNode, sigma, setSettings])
 
   return null
 }
@@ -409,13 +628,22 @@ export function PreviewView() {
                 labelSize: 11,
                 edgeLabelSize: 9,
                 labelColor: { color: '#94a3b8' },
-                labelDensity: 0.8,
-                labelGridCellSize: 80,
+                edgeLabelColor: { color: '#94a3b8' },
+                labelDensity: 1,
+                labelGridCellSize: 60,
+                defaultNodeType: 'circle',
+                zIndex: true,
               }}
             >
               <InstanceGraphLoader triples={triples} />
+              <GraphSearch />
+              <DragAndDrop />
+              <HoverHighlight />
               <ControlsContainer position="bottom-right">
                 <ZoomControl />
+                <LayoutForceAtlas2Control
+                  settings={{ gravity: 1, scalingRatio: 6, adjustSizes: true }}
+                />
               </ControlsContainer>
             </SigmaContainer>
           ) : (
@@ -437,6 +665,9 @@ export function PreviewView() {
               </span>
               <span className="flex items-center gap-1 rounded border border-indigo-800 bg-card/80 px-1.5 py-0.5 font-mono text-indigo-400">
                 ── Object property
+              </span>
+              <span className="flex items-center gap-1 rounded border border-purple-800 bg-card/80 px-1.5 py-0.5 font-mono text-purple-400">
+                ── Bidirectional ⇄
               </span>
               <span className="flex items-center gap-1 rounded border border-emerald-800 bg-card/80 px-1.5 py-0.5 font-mono text-emerald-400">
                 ── Data property
