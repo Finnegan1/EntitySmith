@@ -66,18 +66,21 @@ This means the app never has a scalability problem in the UI layer. The Rust bac
                      source             User reviews.      Ontology alignment
                      fingerprints.                         (schema.org etc).
 
-  5. Identity        6. Unstructured    7. Validation      8. Export
-     Resolution         Enrichment         Gate
+  5. Identity        6. Unstructured    7. Validation &    8. Export
+     Resolution         Enrichment         Release Gate
   ───────────────    ───────────────    ───────────────    ───────────────
   URI minting        Per-document       Blocking errors    RDF/Turtle,
-  strategy.          ontology           only. New types    JSON-LD,
-  Record linkage.    extraction →       from Stage 6 get   GraphML,
-  Conflict policy.   merge →            alignment catch-   Mermaid.
-  New types from     reconcile.         up here. Hard      Schema-only or
-  Stage 6 loop       NEW TYPES loop     gate before        + all instances.
-  back here.         back to Stage 4.   Export unlocks.
-                     Instances loop
-                     back to Stage 5.   ◀ Live RDF preview panel active from Stage 4 onwards (persistent side panel)
+  strategy.          ontology           only. Alignment    JSON-LD,
+  Record linkage.    extraction →       catch-up for       GraphML,
+  Conflict policy.   merge →            Stage 6 types.     Mermaid.
+  New types from     reconcile.         Graph is final     Schema-only or
+  Stage 6 loop       NEW TYPES →        when no pending    + all instances.
+  back here.         Stage 4.           loop-backs +
+                     Instances →        Stage 7 passes.
+                     Stage 5.
+                     NEW EDGES →
+                     staged queue.
+                                        ◀ Live RDF preview panel: Stage 4 onwards
 ```
 
 All stages are non-destructive. Source data is never modified. Every decision (merge, link, accept, reject, conflict resolution) is stored in the project SQLite with full provenance. Stages can be revisited — going back from Stage 4 to Stage 3 and re-running is normal.
@@ -188,6 +191,13 @@ Generates all connection proposals from the Source Catalog. The user reviews and
 │                                                                         │
 │  Result: a set of accepted relationships. Not yet a final graph —       │
 │  entity type consolidation happens in Stage 4.                          │
+│                                                                         │
+│  Stage 3 → Stage 4 handoff rule:                                        │
+│  After Stage 4 merge/subtype decisions, all accepted Stage 3 edges are  │
+│  automatically remapped to canonical entity type names. If "users" was  │
+│  merged into "User", every edge with "users" as an endpoint is updated  │
+│  to "User". Edges whose both endpoints changed are flagged for          │
+│  revalidation in Stage 4 (shown as "affected edges" needing review).    │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -203,9 +213,12 @@ This is where the user decides what each entity type *is* in the final graph. Th
 │                                                                         │
 │  4a. Consolidation decisions (Entity Catalog → comparison panel)        │
 │                                                                         │
-│  MERGE    ─ Same concept, same population. One canonical entity type,   │
-│             multiple source bindings. RDF: owl:equivalentClass          │
-│             e.g. app.sqlite/users + crm.sqlite/customers → User         │
+│  MERGE    ─ Same concept, same population. Internal consolidation:      │
+│             the two source-local candidates collapse into one canonical  │
+│             entity type with multiple source bindings. Only the         │
+│             canonical type appears in the exported ontology — no        │
+│             owl:equivalentClass, no trace of the source-local names.    │
+│             e.g. app.sqlite/users + crm.sqlite/customers → ex:User      │
 │                                                                         │
 │  LINK     ─ Related but distinct. Keep separate, add a relationship.   │
 │             e.g. users (app) → corresponds_to → customers (crm)        │
@@ -252,7 +265,8 @@ Distinct from schema consolidation. Stage 4 decided what entity *types* exist. S
 ┌─────────────────────────────────────────────────────────────────────────┐
 │  STAGE 5: Identity Resolution & Conflict Policy                         │
 │                                                                         │
-│  5a. Within-source row deduplication (can run as early as Stage 1)     │
+│  5a. Within-source row deduplication                                    │
+│       (Stage 1 can shortcut here for obviously dirty sources)           │
 │       ─ Find duplicate rows within a single source                      │
 │       ─ Match rules: exact (email), fuzzy (name >90%), composite        │
 │       ─ Strategies: fast (exact only) / balanced / thorough (all-pairs) │
@@ -338,7 +352,9 @@ Takes the confirmed schema graph (Stage 4) as its anchor. Extracts knowledge fro
 │                   Add evidence quote as rdfs:comment. Done in Stage 6.  │
 │                                                                         │
 │       NEW EDGE  — new relationship between existing entity types        │
-│                   Add as connection proposal, user confirms. Done.      │
+│                   Added to the staged-changes queue (same as all other  │
+│                   edits). User reviews and commits. Not written directly │
+│                   into the schema graph until confirmed.                │
 │                                                                         │
 │       NEW TYPE  — concept not present in structured graph at all        │
 │                   → Loop back to Stage 4 for consolidation decision     │
@@ -350,20 +366,22 @@ Takes the confirmed schema graph (Stage 4) as its anchor. Extracts knowledge fro
 │  Every proposal carries evidence quotes + source document provenance.  │
 │  User reviews in Proposals Panel.                                       │
 │                                                                         │
-│  Result: schema graph enriched with document knowledge. Any new types   │
-│  are formally consolidated in Stage 4 before the graph is final.        │
+│  The graph is considered final when: no pending loop-back proposals     │
+│  remain (all NEW TYPE and instance loop-backs from Stage 6 have been    │
+│  resolved in Stages 4 and 5), and Stage 7 passes with no blocking       │
+│  errors. Until then, the pipeline is still open.                        │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-### Stage 7 — Validation Gate
+### Stage 7 — Validation & Release Gate
 
 A hard gate. Export is not available until blocking errors are resolved. The RDF preview panel is available as a persistent side panel from Stage 4 onwards — it is not a step here. Ontology alignment suggestions run inline in Stage 4; Stage 7 only covers entity types added in Stage 6 that didn't go through Stage 4.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│  STAGE 7: Validation Gate                                               │
+│  STAGE 7: Validation & Release Gate                                               │
 │                                                                         │
 │  7a. Blocking errors (must resolve before Export unlocks)              │
 │       ─ Entity types with no subject column / URI strategy configured   │
@@ -621,7 +639,7 @@ Row linkage and conflict policy for this merged entity type are configured separ
 
 ---
 
-**Link path** — user names the relationship between the two entity types and it becomes a connection proposal, reviewed in Stage 3's Proposals Panel.
+**Link path** — user names the relationship between the two entity types. It is written directly into the schema graph as a manual relationship (same as drawing an edge on the canvas). No routing back to Stage 3 — this is a Stage 4 schema edit, not a proposal.
 
 **Subtype path** — user picks which is parent, which is child. Saved as an `rdfs:subClassOf` relationship in the schema graph.
 
@@ -629,7 +647,7 @@ Row linkage and conflict policy for this merged entity type are configured separ
 
 ### 6d. Stage 5: within-source row deduplication
 
-Within a single source, finding rows that represent the same real-world entity. Can be triggered as early as Stage 1 for known dirty sources, but formally lives in Stage 5.
+Within a single source, finding rows that represent the same real-world entity. The dedup workflow lives in Stage 5. Stage 1 exposes a shortcut into it for obviously dirty sources (a "this data looks messy — clean it now?" prompt), but the user is always taken to the Stage 5 dedup panel to do the actual work.
 
 **Entry point:** entity type detail panel → "Find duplicate rows" action
 
