@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useState } from 'react'
 import { toast } from 'sonner'
 import type { DatasetFile } from '@/types'
 
-interface DatasetContextValue {
+export interface DatasetContextValue {
   dataset: DatasetFile | null
   isDirty: boolean
   setDataset: (dataset: DatasetFile | null) => void

@@ -27,7 +27,9 @@ interface RdfGraphState {
     rdfClass: string,
     subjectColumn: string,
     columnMappings: Record<string, ColumnMapping>,
-    position: { x: number; y: number }
+    position: { x: number; y: number },
+    dbSourcePath?: string,
+    dbTableName?: string
   ) => void
   deleteNode: (nodeId: string) => void
   deleteEdge: (edgeId: string) => void
@@ -63,7 +65,7 @@ const EDGE_COLORS = [
   '#84cc16', // lime
 ]
 
-export function useRdfGraphState(): RdfGraphState {
+export function useRdfGraphState(dismissProposal: (id: string) => void): RdfGraphState {
   const [nodes, setNodes] = useState<Node<RdfNodeData>[]>([])
   const [edges, setEdges] = useState<Edge[]>([])
   const [pendingConnection, setPendingConnection] = useState<PendingConnection | null>(null)
@@ -90,13 +92,25 @@ export function useRdfGraphState(): RdfGraphState {
       rdfClass: string,
       subjectColumn: string,
       columnMappings: Record<string, ColumnMapping>,
-      position: { x: number; y: number }
+      position: { x: number; y: number },
+      dbSourcePath?: string,
+      dbTableName?: string
     ) => {
       const newNode: Node<RdfNodeData> = {
         id: filePath,
         type: 'dataset',
         position,
-        data: { datasetName, attributes, filePath, idField, rdfClass, subjectColumn, columnMappings }
+        data: {
+          datasetName,
+          attributes,
+          filePath,
+          idField,
+          rdfClass,
+          subjectColumn,
+          columnMappings,
+          ...(dbSourcePath !== undefined && { dbSourcePath }),
+          ...(dbTableName !== undefined && { dbTableName }),
+        },
       }
       setNodes((nds) => [...nds, newNode])
     },
@@ -180,9 +194,13 @@ export function useRdfGraphState(): RdfGraphState {
         }
         return addEdge(newEdge, eds)
       })
+      // If this connection came from a proposal, dismiss it now that it's confirmed
+      if (pendingConnection.proposalId) {
+        dismissProposal(pendingConnection.proposalId)
+      }
       setPendingConnection(null)
     },
-    [pendingConnection]
+    [pendingConnection, dismissProposal]
   )
 
   const cancelConnection = useCallback(() => {

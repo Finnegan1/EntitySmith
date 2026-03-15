@@ -9,6 +9,13 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
+interface EntityInfo {
+  /** Raw table / dataset name shown in small muted text */
+  name: string
+  /** RDF class label shown prominently */
+  rdfClass: string
+}
+
 interface EdgeLabelDialogProps {
   open: boolean
   initialValue?: string
@@ -17,6 +24,9 @@ interface EdgeLabelDialogProps {
   title?: string
   confirmLabel?: string
   placeholder?: string
+  /** If provided, a connection strip is rendered showing direction */
+  sourceEntity?: EntityInfo
+  targetEntity?: EntityInfo
   onConfirm: (label: string, bidirectional: boolean, reverseLabel: string) => void
   onCancel: () => void
 }
@@ -28,7 +38,9 @@ export function EdgeLabelDialog({
   initialReverseLabel = '',
   title = 'Name this connection',
   confirmLabel = 'Add connection',
-  placeholder = 'e.g. ex:hasOrder, schema:knows',
+  placeholder = 'e.g. works for, contains, employs',
+  sourceEntity,
+  targetEntity,
   onConfirm,
   onCancel
 }: EdgeLabelDialogProps) {
@@ -78,6 +90,43 @@ export function EdgeLabelDialog({
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
         <div className="flex flex-col gap-3 py-2">
+          {/* Connection strip — shows source and target entity names */}
+          {sourceEntity && targetEntity && (
+            <div className="flex items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2.5">
+              {/* Source */}
+              <div className="flex min-w-0 flex-1 flex-col items-start">
+                <span className="truncate font-mono text-[11px] text-muted-foreground">
+                  {sourceEntity.name}
+                </span>
+                <span className="truncate font-mono text-sm font-semibold text-foreground">
+                  {sourceEntity.rdfClass}
+                </span>
+              </div>
+
+              {/* Arrow — updates live with the bidirectional toggle */}
+              <div className="flex shrink-0 flex-col items-center gap-0.5 text-muted-foreground">
+                {bidirectional ? (
+                  <>
+                    <span className="text-xs leading-none">←</span>
+                    <span className="text-xs leading-none">→</span>
+                  </>
+                ) : (
+                  <span className="text-base leading-none">→</span>
+                )}
+              </div>
+
+              {/* Target */}
+              <div className="flex min-w-0 flex-1 flex-col items-end">
+                <span className="truncate font-mono text-[11px] text-muted-foreground">
+                  {targetEntity.name}
+                </span>
+                <span className="truncate font-mono text-sm font-semibold text-foreground">
+                  {targetEntity.rdfClass}
+                </span>
+              </div>
+            </div>
+          )}
+
           {/* Direction toggle */}
           <button
             type="button"

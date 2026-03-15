@@ -11,6 +11,8 @@ import { WorkspaceContext, useWorkspacesState, useWorkspaces } from '@/hooks/use
 import { DatasetContext, useDatasetState, useDataset } from '@/hooks/use-dataset'
 import { RdfGraphContext, useRdfGraphState } from '@/hooks/use-rdf-graph'
 import { PrefixContext, usePrefixesState } from '@/hooks/use-prefixes'
+import { DatabaseContext, useDatabaseState } from '@/hooks/use-database'
+import { ConnectionProposalsContext, useConnectionProposalsState } from '@/hooks/use-connection-proposals'
 
 function KeyboardSave() {
   const { selectedFilePath } = useWorkspaces()
@@ -81,15 +83,21 @@ function AppInner() {
 export function App() {
   const workspaceValue = useWorkspacesState()
   const datasetValue = useDatasetState()
-  const rdfGraphValue = useRdfGraphState()
+  const connectionProposalsValue = useConnectionProposalsState()
+  const rdfGraphValue = useRdfGraphState(connectionProposalsValue.dismissProposal)
   const prefixValue = usePrefixesState()
+  const databaseValue = useDatabaseState()
 
   return (
     <WorkspaceContext.Provider value={workspaceValue}>
       <DatasetContext.Provider value={datasetValue}>
         <RdfGraphContext.Provider value={rdfGraphValue}>
           <PrefixContext.Provider value={prefixValue}>
-            <AppInner />
+            <DatabaseContext.Provider value={databaseValue}>
+              <ConnectionProposalsContext.Provider value={connectionProposalsValue}>
+                <AppInner />
+              </ConnectionProposalsContext.Provider>
+            </DatabaseContext.Provider>
           </PrefixContext.Provider>
         </RdfGraphContext.Provider>
       </DatasetContext.Provider>

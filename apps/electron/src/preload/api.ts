@@ -14,4 +14,9 @@ export const api = {
     ipcRenderer.on('menu:openProject', handler)
     return () => ipcRenderer.off('menu:openProject', handler)
   },
+  // ── SQLite / Database ──────────────────────────────────────────────────────
+  openDbFileDialog: (): Promise<string | null> => ipcRenderer.invoke('db:openFile'),
+  getDbSchema: (filePath: string): Promise<unknown[]> => ipcRenderer.invoke('db:getSchema', filePath),
+  queryDbTable: (filePath: string, tableName: string): Promise<unknown[]> =>
+    ipcRenderer.invoke('db:queryTable', filePath, tableName),
 }

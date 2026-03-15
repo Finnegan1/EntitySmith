@@ -103,6 +103,9 @@ export interface RdfNodeData {
   rdfClass: string                               // e.g. "ex:User"
   subjectColumn: string                          // primary key column for URI
   columnMappings: Record<string, ColumnMapping>  // per-column RDF mapping
+  // Set for DB-sourced nodes:
+  dbSourcePath?: string
+  dbTableName?: string
   [key: string]: unknown
 }
 
@@ -111,4 +114,48 @@ export interface PendingConnection {
   sourceHandle: string | null
   target: string
   targetHandle: string | null
+  /** If this connection was triggered from a proposal, its id is stored here
+   *  so it can be dismissed only after the user confirms (not on cancel). */
+  proposalId?: string
+}
+
+// ── Database Source ────────────────────────────────────────────────────────────
+
+export interface DbColumn {
+  name: string
+  type: string
+  notNull: boolean
+  primaryKey: boolean
+}
+
+export interface ForeignKey {
+  fromColumn: string
+  toTable: string
+  toColumn: string
+}
+
+export interface DbTableSchema {
+  tableName: string
+  columns: DbColumn[]
+  foreignKeys: ForeignKey[]
+}
+
+export interface DatabaseSource {
+  id: string       // equals filePath
+  filePath: string
+  name: string     // basename of the file
+  tables: DbTableSchema[]
+}
+
+// ── Connection Proposals (FK-inferred) ────────────────────────────────────────
+
+export interface ConnectionProposal {
+  id: string
+  sourceNodeId: string
+  targetNodeId: string
+  sourceTable: string
+  targetTable: string
+  fromColumn: string
+  toColumn: string
+  dismissed: boolean
 }

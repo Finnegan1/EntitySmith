@@ -2,6 +2,7 @@ import { ipcMain, dialog } from 'electron'
 import { readdirSync, readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
+import Database from 'better-sqlite3'
 import { initWorkspaceStore, readWorkspaces, addWorkspace, removeWorkspace } from './workspace-store'
 
 interface RawFileResult {
@@ -64,5 +65,61 @@ export function registerIpcHandlers(userDataPath: string, appPath: string): void
 
   ipcMain.handle('dataset:save', (_event, payload: SaveDatasetPayload) => {
     writeFileSync(payload.filePath, JSON.stringify(payload.dataset, null, 2), 'utf-8')
+  })
+
+  // ── SQLite / Database handlers ───────────────────────────────────────────────
+
+  ipcMain.handle('db:openFile', async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      filters: [{ name: 'SQLite Database', extensions: ['db', 'sqlite', 'sqlite3', 's3db', 'sl3'] }],
+    })
+    if (result.canceled || result.filePaths.length === 0) return null
+    return result.filePaths[0]
+  })
+
+  ipcMain.handle('db:getSchema', (_event, filePath: string) => {
+    const db = new Database(filePath, { readonly: true })
+    try {
+      const tableRows = db
+        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
+        .all() as { name: string }[]
+
+      return tableRows.map(({ name: tableName }) => {
+        const safe = tableName.replace(/"/g, '""')
+        const columns = db.prepare(`PRAGMA table_info("${safe}")`).all() as Array<{
+          cid: number; name: string; type: string; notnull: number; pk: number
+        }>
+        const fks = db.prepare(`PRAGMA foreign_key_list("${safe}")`).all() as Array<{
+          table: string; from: string; to: string
+        }>
+        return {
+          tableName,
+          columns: columns.map((c) => ({
+            name: c.name,
+            type: c.type || 'TEXT',
+            notNull: c.notnull === 1,
+            primaryKey: c.pk > 0,
+          })),
+          foreignKeys: fks.map((fk) => ({
+            fromColumn: fk.from,
+            toTable: fk.table,
+            toColumn: fk.to,
+          })),
+        }
+      })
+    } finally {
+      db.close()
+    }
+  })
+
+  ipcMain.handle('db:queryTable', (_event, filePath: string, tableName: string) => {
+    const db = new Database(filePath, { readonly: true })
+    try {
+      const safe = tableName.replace(/"/g, '""')
+      return db.prepare(`SELECT * FROM "${safe}" LIMIT 1000`).all()
+    } finally {
+      db.close()
+    }
   })
 }
