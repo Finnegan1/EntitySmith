@@ -8,9 +8,11 @@ export function EntityTypeNode({ data, selected }: NodeProps<EntityTypeNodeType>
   const { entityType, bindings } = data;
   return (
     <div
-      className={`rounded-lg border bg-card shadow-sm w-[200px] overflow-hidden transition-shadow ${selected ? "ring-2 ring-primary shadow-md" : ""}`}
+      className={`rounded-lg border bg-card shadow-sm w-[220px] overflow-hidden transition-shadow ${selected ? "ring-2 ring-primary shadow-md" : ""}`}
     >
-      <Handle type="target" position={Position.Left} className="!bg-primary" />
+      <Handle type="target" position={Position.Left} className="!bg-primary !w-2 !h-2" />
+      <Handle type="source" position={Position.Right} className="!bg-primary !w-2 !h-2" />
+
       <div className="bg-primary px-3 py-2">
         <p className="text-xs font-semibold text-primary-foreground truncate">{entityType.name}</p>
         {entityType.label && (
@@ -29,7 +31,6 @@ export function EntityTypeNode({ data, selected }: NodeProps<EntityTypeNodeType>
           ))}
         </div>
       )}
-      <Handle type="source" position={Position.Right} className="!bg-primary" />
     </div>
   );
 }
