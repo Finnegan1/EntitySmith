@@ -31,7 +31,17 @@ export interface SourceDescriptor {
   name: string;
   kind: SourceKind;
   path?: string;
+  config: Record<string, unknown>;
   createdAt: string;
+  updatedAt: string;
+}
+
+export interface SourceCapabilities {
+  canProfile: boolean;
+  canSample: boolean;
+  supportsSchemaIntrospection: boolean;
+  supportsLazyExport: boolean;
+  supportsEnrichment: boolean;
 }
 
 // ── Schema Graph ──────────────────────────────────────────────────────────────

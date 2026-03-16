@@ -8,32 +8,53 @@ import {
   PlusCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import type { AppView } from "@/types";
+import { SourcesView } from "@/features/sources/SourcesView";
+import type { AppView, ProjectState, SourceDescriptor } from "@/types";
 
 interface WorkspaceAreaProps {
   activeView: AppView;
-  projectName: string | null;
+  project: ProjectState | null;
   onOpenProject: () => void;
   onNewProject: () => void;
   isLoading?: boolean;
+  selectedSourceId: string | null;
+  onSourceSelect: (source: SourceDescriptor | null) => void;
 }
 
 export function WorkspaceArea({
   activeView,
-  projectName,
+  project,
   onOpenProject,
   onNewProject,
   isLoading = false,
+  selectedSourceId,
+  onSourceSelect,
 }: WorkspaceAreaProps) {
-  if (!projectName) {
-    return <WelcomeScreen onOpen={onOpenProject} onNew={onNewProject} isLoading={isLoading} />;
+  if (!project) {
+    return (
+      <WelcomeScreen
+        onOpen={onOpenProject}
+        onNew={onNewProject}
+        isLoading={isLoading}
+      />
+    );
   }
 
   return (
     <div className="flex h-full flex-col">
       <ViewHeader view={activeView} />
-      <div className="flex-1 overflow-auto p-6">
-        <EmptyViewState view={activeView} />
+      <div className="flex-1 overflow-hidden">
+        {activeView === "sources" ? (
+          <SourcesView
+            projectId={project.id}
+            selectedSourceId={selectedSourceId}
+            onSourceSelect={onSourceSelect}
+          />
+        ) : (
+          <div className="flex h-full items-center justify-center p-6">
+            <EmptyViewState view={activeView} />
+          </div>
+        )}
       </div>
     </div>
   );
@@ -62,18 +83,27 @@ function WelcomeScreen({
         </p>
       </div>
 
-      <div className="flex flex-col gap-3 w-full max-w-[240px]">
-        <Button onClick={onNew} className="w-full gap-2" disabled={isLoading}>
+      <div className="flex w-full max-w-[240px] flex-col gap-3">
+        <Button
+          onClick={onNew}
+          className="w-full gap-2"
+          disabled={isLoading}
+        >
           <PlusCircle size={15} />
           New Project
         </Button>
-        <Button variant="outline" onClick={onOpen} className="w-full gap-2" disabled={isLoading}>
+        <Button
+          variant="outline"
+          onClick={onOpen}
+          className="w-full gap-2"
+          disabled={isLoading}
+        >
           <FolderOpen size={15} />
           {isLoading ? "Opening…" : "Open Project"}
         </Button>
       </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-3 w-full max-w-[480px]">
+      <div className="mt-4 grid w-full max-w-[480px] grid-cols-2 gap-3">
         {WORKFLOW_STEPS.map((step) => (
           <div
             key={step.label}
@@ -118,49 +148,27 @@ const WORKFLOW_STEPS = [
 
 // ── View header ───────────────────────────────────────────────────────────────
 
-const VIEW_META: Record<AppView, { title: string; description: string }> = {
-  project: {
-    title: "Project",
-    description: "Project overview and settings",
-  },
-  sources: {
-    title: "Sources",
-    description: "Register and manage structured and unstructured data sources",
-  },
-  "schema-graph": {
-    title: "Schema Graph",
-    description: "Canonical entity types and their relationships",
-  },
-  proposals: {
-    title: "Proposals",
-    description: "System-generated relationship and schema proposals",
-  },
-  identity: {
-    title: "Identity Resolution",
-    description: "URI strategies, record linkage, and conflict policies",
-  },
-  export: {
-    title: "Export",
-    description: "Validate and export the knowledge graph",
-  },
-  settings: {
-    title: "Settings",
-    description: "Application and project preferences",
-  },
+const VIEW_META: Record<AppView, { title: string }> = {
+  project: { title: "Project" },
+  sources: { title: "Sources" },
+  "schema-graph": { title: "Schema Graph" },
+  proposals: { title: "Proposals" },
+  identity: { title: "Identity Resolution" },
+  export: { title: "Export" },
+  settings: { title: "Settings" },
 };
 
 function ViewHeader({ view }: { view: AppView }) {
-  const meta = VIEW_META[view];
   return (
-    <div className="flex h-12 shrink-0 items-center gap-3 border-b border-border px-5">
-      <div>
-        <h2 className="text-sm font-semibold text-foreground">{meta.title}</h2>
-      </div>
+    <div className="flex h-12 shrink-0 items-center border-b border-border px-5">
+      <h2 className="text-sm font-semibold text-foreground">
+        {VIEW_META[view].title}
+      </h2>
     </div>
   );
 }
 
-// ── Empty states per view ─────────────────────────────────────────────────────
+// ── Empty states ──────────────────────────────────────────────────────────────
 
 const VIEW_EMPTY: Record<
   AppView,
@@ -180,7 +188,7 @@ const VIEW_EMPTY: Record<
     icon: <GitFork size={28} />,
     message: "Schema graph is empty",
     detail:
-      "Entity types will appear here once sources are profiled and proposals are accepted.",
+      "Entity types appear here once sources are profiled and proposals accepted.",
   },
   proposals: {
     icon: <Inbox size={28} />,
@@ -207,7 +215,7 @@ const VIEW_EMPTY: Record<
 function EmptyViewState({ view }: { view: AppView }) {
   const empty = VIEW_EMPTY[view];
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
+    <div className="flex flex-col items-center gap-3 text-center">
       <div className="text-muted-foreground/40">{empty.icon}</div>
       <p className="text-sm font-medium text-foreground">{empty.message}</p>
       <p className="max-w-xs text-xs text-muted-foreground">{empty.detail}</p>

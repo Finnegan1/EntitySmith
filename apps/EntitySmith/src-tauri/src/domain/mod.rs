@@ -25,7 +25,108 @@ pub struct SourceDescriptor {
     pub name: String,
     pub kind: SourceKind,
     pub path: Option<String>,
+    /// Extensible JSON config blob. Empty for file-based sources in Phase 2;
+    /// used for connection strings in Phase 2+ remote sources.
+    pub config: serde_json::Value,
     pub created_at: String,
+    pub updated_at: String,
+}
+
+/// Static capability metadata for a source kind.
+/// Returned by `source_capabilities` IPC command so the frontend can
+/// conditionally show/hide profile, sample, and enrichment affordances.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceCapabilities {
+    pub can_profile: bool,
+    pub can_sample: bool,
+    pub supports_schema_introspection: bool,
+    pub supports_lazy_export: bool,
+    pub supports_enrichment: bool,
+}
+
+impl SourceKind {
+    pub fn capabilities(&self) -> SourceCapabilities {
+        match self {
+            SourceKind::SqliteFile => SourceCapabilities {
+                can_profile: true,
+                can_sample: true,
+                supports_schema_introspection: true,
+                supports_lazy_export: true,
+                supports_enrichment: false,
+            },
+            SourceKind::JsonFile => SourceCapabilities {
+                can_profile: true,
+                can_sample: true,
+                supports_schema_introspection: false,
+                supports_lazy_export: false,
+                supports_enrichment: false,
+            },
+            SourceKind::CsvFile => SourceCapabilities {
+                can_profile: true,
+                can_sample: true,
+                supports_schema_introspection: false,
+                supports_lazy_export: true,
+                supports_enrichment: false,
+            },
+            SourceKind::MarkdownFolder => SourceCapabilities {
+                can_profile: false,
+                can_sample: false,
+                supports_schema_introspection: false,
+                supports_lazy_export: false,
+                supports_enrichment: true,
+            },
+            SourceKind::PdfFile => SourceCapabilities {
+                can_profile: false,
+                can_sample: false,
+                supports_schema_introspection: false,
+                supports_lazy_export: false,
+                supports_enrichment: true,
+            },
+            SourceKind::Url => SourceCapabilities {
+                can_profile: false,
+                can_sample: false,
+                supports_schema_introspection: false,
+                supports_lazy_export: false,
+                supports_enrichment: true,
+            },
+            SourceKind::Postgres | SourceKind::Mysql => SourceCapabilities {
+                can_profile: true,
+                can_sample: true,
+                supports_schema_introspection: true,
+                supports_lazy_export: true,
+                supports_enrichment: false,
+            },
+        }
+    }
+
+    /// Convert to the plain string stored in SQLite.
+    pub fn to_db_str(&self) -> &'static str {
+        match self {
+            SourceKind::SqliteFile => "sqlite_file",
+            SourceKind::JsonFile => "json_file",
+            SourceKind::CsvFile => "csv_file",
+            SourceKind::MarkdownFolder => "markdown_folder",
+            SourceKind::PdfFile => "pdf_file",
+            SourceKind::Url => "url",
+            SourceKind::Postgres => "postgres",
+            SourceKind::Mysql => "mysql",
+        }
+    }
+
+    pub fn from_db_str(s: &str) -> Result<Self, String> {
+        match s {
+            "sqlite_file" => Ok(SourceKind::SqliteFile),
+            "json_file" => Ok(SourceKind::JsonFile),
+            "csv_file" => Ok(SourceKind::CsvFile),
+            "markdown_folder" => Ok(SourceKind::MarkdownFolder),
+            "pdf_file" => Ok(SourceKind::PdfFile),
+            "url" => Ok(SourceKind::Url),
+            "postgres" => Ok(SourceKind::Postgres),
+            "mysql" => Ok(SourceKind::Mysql),
+            _ => Err(format!("Unknown source kind: '{s}'")),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
