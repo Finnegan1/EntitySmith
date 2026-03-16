@@ -1,0 +1,44 @@
+{
+  "products": [
+    {
+      "product_id": "PROD-001",
+      "name": "Basic Widget",
+      "description": "A basic widget for everyday use",
+      "price": 49.99,
+      "category": "Widgets",
+      "inventory": 100
+    },
+    {
+      "product_id": "PROD-002",
+      "name": "Advanced Widget",
+      "description": "An advanced widget with extra features",
+      "price": 69.99,
+      "category": "Widgets",
+      "inventory": 50
+    },
+    {
+      "product_id": "PROD-003",
+      "name": "Premium Widget",
+      "description": "The premium widget with all features",
+      "price": 149.99,
+      "category": "Widgets",
+      "inventory": 25
+    },
+    {
+      "product_id": "PROD-004",
+      "name": "Gadget Pro",
+      "description": "Professional grade gadget",
+      "price": 199.99,
+      "category": "Gadgets",
+      "inventory": 30
+    },
+    {
+      "product_id": "PROD-005",
+      "name": "Gadget Lite",
+      "description": "Lightweight gadget for beginners",
+      "price": 99.99,
+      "category": "Gadgets",
+      "inventory": 75
+    }
+  ]
+}

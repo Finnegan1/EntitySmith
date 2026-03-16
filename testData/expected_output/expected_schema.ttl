@@ -1,0 +1,106 @@
+@prefix ex: <http://example.org/> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+# Entity Types (Classes)
+ex:User a rdfs:Class ;
+    rdfs:label "User" ;
+    rdfs:comment "Represents users/customers in the system" .
+
+ex:Product a rdfs:Class ;
+    rdfs:label "Product" ;
+    rdfs:comment "Represents products available for purchase" .
+
+ex:Order a rdfs:Class ;
+    rdfs:label "Order" ;
+    rdfs:comment "Represents customer orders" .
+
+ex:OrderItem a rdfs:Class ;
+    rdfs:label "OrderItem" ;
+    rdfs:comment "Represents individual items within an order" .
+
+# Relationships (Properties)
+ex:places a rdf:Property ;
+    rdfs:domain ex:User ;
+    rdfs:range ex:Order ;
+    rdfs:label "places" ;
+    rdfs:comment "A user places an order" .
+
+ex:contains a rdf:Property ;
+    rdfs:domain ex:Order ;
+    rdfs:range ex:OrderItem ;
+    rdfs:label "contains" ;
+    rdfs:comment "An order contains order items" .
+
+ex:references a rdf:Property ;
+    rdfs:domain ex:OrderItem ;
+    rdfs:range ex:Product ;
+    rdfs:label "references" ;
+    rdfs:comment "An order item references a product" .
+
+ex:hasEmail a rdf:Property ;
+    rdfs:domain ex:User ;
+    rdfs:range xsd:string ;
+    rdfs:label "has email" ;
+    rdfs:comment "User's email address" .
+
+ex:hasName a rdf:Property ;
+    rdfs:domain ex:User ;
+    rdfs:range xsd:string ;
+    rdfs:label "has name" ;
+    rdfs:comment "User's full name" .
+
+ex:hasProductName a rdf:Property ;
+    rdfs:domain ex:Product ;
+    rdfs:range xsd:string ;
+    rdfs:label "has product name" ;
+    rdfs:comment "Product name" .
+
+ex:hasDescription a rdf:Property ;
+    rdfs:domain ex:Product ;
+    rdfs:range xsd:string ;
+    rdfs:label "has description" ;
+    rdfs:comment "Product description" .
+
+ex:hasPrice a rdf:Property ;
+    rdfs:domain ex:Product ;
+    rdfs:range xsd:decimal ;
+    rdfs:label "has price" ;
+    rdfs:comment "Product price" .
+
+ex:hasCategory a rdf:Property ;
+    rdfs:domain ex:Product ;
+    rdfs:range xsd:string ;
+    rdfs:label "has category" ;
+    rdfs:comment "Product category" .
+
+ex:hasOrderDate a rdf:Property ;
+    rdfs:domain ex:Order ;
+    rdfs:range xsd:date ;
+    rdfs:label "has order date" ;
+    rdfs:comment "Order date" .
+
+ex:hasTotalAmount a rdf:Property ;
+    rdfs:domain ex:Order ;
+    rdfs:range xsd:decimal ;
+    rdfs:label "has total amount" ;
+    rdfs:comment "Total order amount" .
+
+ex:hasStatus a rdf:Property ;
+    rdfs:domain ex:Order ;
+    rdfs:range xsd:string ;
+    rdfs:label "has status" ;
+    rdfs:comment "Order status" .
+
+ex:hasQuantity a rdf:Property ;
+    rdfs:domain ex:OrderItem ;
+    rdfs:range xsd:integer ;
+    rdfs:label "has quantity" ;
+    rdfs:comment "Quantity of product in order item" .
+
+ex:hasUnitPrice a rdf:Property ;
+    rdfs:domain ex:OrderItem ;
+    rdfs:range xsd:decimal ;
+    rdfs:label "has unit price" ;
+    rdfs:comment "Unit price of product in order item" .

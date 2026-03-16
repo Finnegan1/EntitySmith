@@ -1,0 +1,42 @@
+[
+  {
+    "customer_id": "CUST-001",
+    "name": "Alice Smith",
+    "email": "alice@ex.com",
+    "join_date": "2023-01-10",
+    "country": "US",
+    "membership_level": "basic"
+  },
+  {
+    "customer_id": "CUST-002", 
+    "name": "Bob Johnson",
+    "email": "bob@ex.com",
+    "join_date": "2023-01-15",
+    "country": "UK",
+    "membership_level": "premium"
+  },
+  {
+    "customer_id": "CUST-003",
+    "name": "Charlie Brown",
+    "email": "charlie@ex.com",
+    "join_date": "2023-02-01",
+    "country": "DE",
+    "membership_level": "basic"
+  },
+  {
+    "customer_id": "CUST-004",
+    "name": "Diana Prince",
+    "email": "diana@ex.com",
+    "join_date": "2023-02-10",
+    "country": "FR",
+    "membership_level": "enterprise"
+  },
+  {
+    "customer_id": "CUST-005",
+    "name": "Ethan Hunt",
+    "email": "ethan@ex.com",
+    "join_date": "2023-03-05",
+    "country": "US",
+    "membership_level": "premium"
+  }
+]
