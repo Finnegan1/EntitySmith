@@ -15,6 +15,8 @@ interface UseProposalsReturn {
     action: ReviewAction,
     reviewedPredicate?: string,
     reviewedCardinality?: string,
+    reversed?: boolean,
+    inversePredicate?: string,
   ) => Promise<void>;
   reload: () => Promise<void>;
   clearError: () => void;
@@ -80,6 +82,8 @@ export function useProposals(
       action: ReviewAction,
       reviewedPredicate?: string,
       reviewedCardinality?: string,
+      reversed?: boolean,
+      inversePredicate?: string,
     ) => {
       try {
         if (action === "reject") {
@@ -95,20 +99,24 @@ export function useProposals(
           );
         } else if (action === "modify") {
           // Save custom predicate/cardinality first, then promote into the graph.
-          // promote_proposal reads the reviewed values from the DB, so the order matters.
           await invoke<Proposal>("review_proposal", {
             proposalId,
             action,
             reviewedPredicate: reviewedPredicate ?? null,
             reviewedCardinality: reviewedCardinality ?? null,
           });
-          await invoke<void>("promote_proposal", { proposalId });
-          // promote_proposal emits proposals:updated → reload handled by the listener
+          await invoke<void>("promote_proposal", {
+            proposalId,
+            reversed: reversed ?? false,
+            inversePredicate: inversePredicate ?? null,
+          });
         } else {
-          // "accept" → promote directly. promote_proposal internally marks the proposal
-          // as accepted and creates the entity types + relationship in the schema graph.
-          await invoke<void>("promote_proposal", { proposalId });
-          // promote_proposal emits proposals:updated → reload handled by the listener
+          // "accept" → promote directly.
+          await invoke<void>("promote_proposal", {
+            proposalId,
+            reversed: reversed ?? false,
+            inversePredicate: inversePredicate ?? null,
+          });
         }
       } catch (e) {
         setError(String(e));

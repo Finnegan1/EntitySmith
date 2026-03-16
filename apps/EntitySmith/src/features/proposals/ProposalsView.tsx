@@ -180,6 +180,8 @@ export function ProposalsView({
 
 // ── ProposalRow ────────────────────────────────────────────────────────────────
 
+type Direction = "forward" | "reverse" | "both";
+
 function ProposalRow({
   proposal: p,
   isSelected,
@@ -194,6 +196,8 @@ function ProposalRow({
     action: "accept" | "reject" | "modify",
     predicate?: string,
     cardinality?: string,
+    reversed?: boolean,
+    inversePredicate?: string,
   ) => Promise<void>;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -204,9 +208,14 @@ function ProposalRow({
   const [editCardinality, setEditCardinality] = useState(
     p.reviewedCardinality ?? p.suggestedCardinality,
   );
+  const [direction, setDirection] = useState<Direction>("forward");
+  const [editInversePredicate, setEditInversePredicate] = useState("");
 
   const isPending = p.status === "pending";
   const effectivePredicate = p.reviewedPredicate ?? p.suggestedPredicate;
+
+  const reversed = direction === "reverse";
+  const inversePredicate = direction === "both" ? editInversePredicate : undefined;
 
   async function handle(action: "accept" | "reject" | "modify") {
     setBusy(true);
@@ -216,6 +225,8 @@ function ProposalRow({
         action,
         action === "modify" ? editPredicate : undefined,
         action === "modify" ? editCardinality : undefined,
+        reversed,
+        inversePredicate,
       );
     } finally {
       setBusy(false);
@@ -304,7 +315,7 @@ function ProposalRow({
           {isPending && !expanded && (
             <>
               <Tip
-                content="Accept this proposal: creates canonical entity types for both endpoints and adds the relationship to the schema graph."
+                content="Accept this proposal: creates canonical entity types for both endpoints and adds the relationship to the schema graph. Expand to customise direction or add an inverse."
                 side="top"
               >
                 <ActionButton
@@ -346,66 +357,125 @@ function ProposalRow({
 
           {/* Edit + action row */}
           {isPending && (
-            <div className="flex items-end gap-2 border-t border-border/50 pt-3">
+            <div className="flex flex-col gap-3 border-t border-border/50 pt-3">
+              {/* Direction selector */}
               <div className="flex flex-col gap-1">
                 <Tip
-                  content="The RDF predicate name used for this relationship in the exported graph. You can rename it to something more semantically meaningful (e.g. 'places' instead of 'has_user')."
+                  content="Choose which direction(s) to add to the schema graph. Forward adds A→B, Reverse adds B→A, Both adds A→B and B→A with separate predicate names."
                   side="top"
                 >
-                  <label className="text-[10px] text-muted-foreground cursor-help">
-                    Predicate
-                  </label>
+                  <label className="text-[10px] text-muted-foreground cursor-help">Direction</label>
                 </Tip>
-                <input
-                  type="text"
-                  value={editPredicate}
-                  onChange={(e) => setEditPredicate(e.target.value)}
-                  className="h-7 rounded border border-border bg-background px-2 font-mono text-xs focus:outline-none focus:ring-1 focus:ring-ring"
-                />
+                <div className="flex items-center gap-1 text-[11px]">
+                  <span className="font-mono text-muted-foreground">{p.fromEntity}</span>
+                  <div className="flex rounded border border-border overflow-hidden">
+                    {(["forward", "both", "reverse"] as Direction[]).map((d) => (
+                      <button
+                        key={d}
+                        onClick={() => setDirection(d)}
+                        className={cn(
+                          "px-2 py-0.5 text-[11px] transition-colors",
+                          direction === d
+                            ? "bg-primary text-primary-foreground"
+                            : "text-muted-foreground hover:bg-muted",
+                        )}
+                      >
+                        {d === "forward" ? "→" : d === "reverse" ? "←" : "↔"}
+                      </button>
+                    ))}
+                  </div>
+                  <span className="font-mono text-muted-foreground">{p.toEntity}</span>
+                </div>
               </div>
-              <div className="flex flex-col gap-1">
-                <Tip
-                  content="How many target entities each source entity relates to. 1:N means one source record links to many target records (e.g. one User places many Orders)."
-                  side="top"
-                >
-                  <label className="text-[10px] text-muted-foreground cursor-help">
-                    Cardinality
-                  </label>
-                </Tip>
-                <select
-                  value={editCardinality}
-                  onChange={(e) => setEditCardinality(e.target.value)}
-                  className="h-7 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
-                >
-                  <option value="unknown">Unknown</option>
-                  <option value="one_to_one">1 : 1</option>
-                  <option value="one_to_many">1 : N</option>
-                  <option value="many_to_many">N : N</option>
-                </select>
-              </div>
-              <div className="flex gap-1.5">
-                <Tip
-                  content="Accept with your edited predicate and cardinality. Creates entity types and the relationship in the schema graph using your custom values."
-                  side="top"
-                >
-                  <ActionButton
-                    label="Save & Accept"
-                    variant="accept"
-                    busy={busy}
-                    onClick={() => handle("modify")}
+
+              {/* Predicate(s) + cardinality row */}
+              <div className="flex flex-wrap items-end gap-2">
+                <div className="flex flex-col gap-1">
+                  <Tip
+                    content={
+                      direction === "reverse"
+                        ? `Predicate for the reverse relationship: ${p.toEntity} → ${p.fromEntity}`
+                        : `Predicate for the forward relationship: ${p.fromEntity} → ${p.toEntity}`
+                    }
+                    side="top"
+                  >
+                    <label className="text-[10px] text-muted-foreground cursor-help">
+                      {direction === "reverse" ? "Predicate (←)" : "Predicate (→)"}
+                    </label>
+                  </Tip>
+                  <input
+                    type="text"
+                    value={editPredicate}
+                    onChange={(e) => setEditPredicate(e.target.value)}
+                    className="h-7 rounded border border-border bg-background px-2 font-mono text-xs focus:outline-none focus:ring-1 focus:ring-ring"
                   />
-                </Tip>
-                <Tip
-                  content="Reject this proposal. It will not be reintroduced by future analysis runs."
-                  side="top"
-                >
-                  <ActionButton
-                    label="Reject"
-                    variant="reject"
-                    busy={busy}
-                    onClick={() => handle("reject")}
-                  />
-                </Tip>
+                </div>
+
+                {direction === "both" && (
+                  <div className="flex flex-col gap-1">
+                    <Tip
+                      content={`Predicate for the inverse relationship: ${p.toEntity} → ${p.fromEntity}. Leave empty to skip.`}
+                      side="top"
+                    >
+                      <label className="text-[10px] text-muted-foreground cursor-help">
+                        Inverse predicate (←)
+                      </label>
+                    </Tip>
+                    <input
+                      type="text"
+                      placeholder="e.g. works for"
+                      value={editInversePredicate}
+                      onChange={(e) => setEditInversePredicate(e.target.value)}
+                      className="h-7 rounded border border-border bg-background px-2 font-mono text-xs placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-ring"
+                    />
+                  </div>
+                )}
+
+                <div className="flex flex-col gap-1">
+                  <Tip
+                    content="How many target entities each source entity relates to."
+                    side="top"
+                  >
+                    <label className="text-[10px] text-muted-foreground cursor-help">
+                      Cardinality
+                    </label>
+                  </Tip>
+                  <select
+                    value={editCardinality}
+                    onChange={(e) => setEditCardinality(e.target.value)}
+                    className="h-7 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                  >
+                    <option value="unknown">Unknown</option>
+                    <option value="one_to_one">1 : 1</option>
+                    <option value="one_to_many">1 : N</option>
+                    <option value="many_to_many">N : N</option>
+                  </select>
+                </div>
+
+                <div className="flex gap-1.5">
+                  <Tip
+                    content="Accept with your settings. Creates entity types and the configured relationship(s) in the schema graph."
+                    side="top"
+                  >
+                    <ActionButton
+                      label="Save & Accept"
+                      variant="accept"
+                      busy={busy}
+                      onClick={() => handle("modify")}
+                    />
+                  </Tip>
+                  <Tip
+                    content="Reject this proposal. It will not be reintroduced by future analysis runs."
+                    side="top"
+                  >
+                    <ActionButton
+                      label="Reject"
+                      variant="reject"
+                      busy={busy}
+                      onClick={() => handle("reject")}
+                    />
+                  </Tip>
+                </div>
               </div>
             </div>
           )}

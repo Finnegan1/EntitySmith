@@ -202,6 +202,8 @@ pub fn list_source_entities_summary(
 #[tauri::command]
 pub fn promote_proposal(
     proposal_id: String,
+    reversed: Option<bool>,
+    inverse_predicate: Option<String>,
     state: State<'_, AppState>,
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
@@ -251,13 +253,30 @@ pub fn promote_proposal(
         None => store.create_entity_type(&proposal.to_entity, None, None)?,
     };
 
-    // 5. Create the relationship.
+    // 5. Create the primary relationship, respecting the requested direction.
+    let (source_et, target_et) = if reversed.unwrap_or(false) {
+        (&to_et, &from_et)
+    } else {
+        (&from_et, &to_et)
+    };
     store.add_relationship(
-        &from_et.id,
-        &to_et.id,
+        &source_et.id,
+        &target_et.id,
         effective_predicate,
         effective_cardinality,
     )?;
+
+    // 5b. Optionally create the inverse relationship.
+    if let Some(ref inv_pred) = inverse_predicate {
+        if !inv_pred.trim().is_empty() {
+            store.add_relationship(
+                &target_et.id,
+                &source_et.id,
+                inv_pred.trim(),
+                effective_cardinality,
+            )?;
+        }
+    }
 
     // 6. Bind from_source_id/from_entity → from entity type (idempotent).
     store.bind_source_entity(&from_et.id, &proposal.from_source_id, &proposal.from_entity)?;
