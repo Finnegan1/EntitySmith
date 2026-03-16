@@ -3,14 +3,39 @@ import { X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ProfilePanel, ProfileLoading } from "@/features/sources/ProfilePanel";
 import { useSourceProfile } from "@/hooks/useSourceProfile";
-import type { AppView, Proposal, SourceDescriptor, SourceKind } from "@/types";
+import type { AppView, EntityTypeWithBindings, Proposal, SourceDescriptor, SourceKind } from "@/types";
+
+// ── Tooltip helper ─────────────────────────────────────────────────────────────
+
+function Tip({
+  children,
+  content,
+  side = "left",
+}: {
+  children: React.ReactNode;
+  content: string;
+  side?: "top" | "bottom" | "left" | "right";
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent side={side}>
+        <p className="max-w-[260px]">{content}</p>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+// ── Panel shell ───────────────────────────────────────────────────────────────
 
 interface DetailsPanelProps {
   activeView: AppView;
   selectedSource: SourceDescriptor | null;
   selectedProposal: Proposal | null;
+  selectedEntityType?: EntityTypeWithBindings | null;
   onClose: () => void;
 }
 
@@ -18,6 +43,7 @@ export function DetailsPanel({
   activeView,
   selectedSource,
   selectedProposal,
+  selectedEntityType,
   onClose,
 }: DetailsPanelProps) {
   return (
@@ -26,12 +52,14 @@ export function DetailsPanel({
         <p className="text-xs font-semibold text-sidebar-foreground">
           {PANEL_TITLE[activeView]}
         </p>
-        <button
-          onClick={onClose}
-          className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-        >
-          <X size={14} />
-        </button>
+        <Tip content="Close the details panel." side="left">
+          <button
+            onClick={onClose}
+            className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+          >
+            <X size={14} />
+          </button>
+        </Tip>
       </div>
 
       <div className="flex-1 overflow-auto">
@@ -39,6 +67,8 @@ export function DetailsPanel({
           <SourceDetail source={selectedSource} />
         ) : activeView === "proposals" && selectedProposal ? (
           <ProposalDetail proposal={selectedProposal} />
+        ) : activeView === "schema-graph" && selectedEntityType ? (
+          <EntityTypeDetail et={selectedEntityType} />
         ) : (
           <EmptyDetail message={PANEL_EMPTY[activeView]} />
         )}
@@ -56,7 +86,6 @@ function SourceDetail({ source }: { source: SourceDescriptor }) {
   const { profile, isLoading, error, profileSource, loadProfile, clearError } =
     useSourceProfile(source.id);
 
-  // Load existing profile whenever the selected source changes.
   useEffect(() => {
     loadProfile(source.id);
   }, [source.id, loadProfile]);
@@ -83,7 +112,6 @@ function SourceDetail({ source }: { source: SourceDescriptor }) {
 
       <Separator className="mb-3" />
 
-      {/* Path */}
       {source.path && (
         <DetailRow label="Path">
           <p className="break-all text-[11px] text-muted-foreground font-mono">
@@ -92,7 +120,6 @@ function SourceDetail({ source }: { source: SourceDescriptor }) {
         </DetailRow>
       )}
 
-      {/* Timestamps */}
       <DetailRow label="Added">
         <p className="text-[11px] text-muted-foreground">
           {formatDate(source.createdAt)}
@@ -108,7 +135,9 @@ function SourceDetail({ source }: { source: SourceDescriptor }) {
       <div className="flex flex-col gap-1.5">
         {caps.map(({ label, enabled }) => (
           <div key={label} className="flex items-center justify-between">
-            <span className="text-xs text-muted-foreground">{label}</span>
+            <Tip content={CAPABILITY_TIP[label]} side="left">
+              <span className="text-xs text-muted-foreground cursor-help">{label}</span>
+            </Tip>
             <span
               className={`text-[11px] font-medium ${
                 enabled ? "text-green-600" : "text-muted-foreground/50"
@@ -124,19 +153,33 @@ function SourceDetail({ source }: { source: SourceDescriptor }) {
 
       {/* Profile section */}
       <div className="flex items-center justify-between mb-2">
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-          Profile
-        </p>
+        <Tip
+          content="Profiling analyses this source's structure: column types, row counts, null rates, unique value estimates, and foreign key candidates. Results are stored and used to generate connection proposals."
+          side="left"
+        >
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground cursor-help">
+            Profile
+          </p>
+        </Tip>
         {canProfile && (
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-6 text-[10px] px-2"
-            onClick={handleProfile}
-            disabled={isLoading}
+          <Tip
+            content={
+              profile
+                ? "Re-run profiling to pick up schema changes or new rows. Clears and replaces the previous profile."
+                : "Analyse this source's structure and store the results. Profiling is required before connection proposals can be generated."
+            }
+            side="left"
           >
-            {isLoading ? "Running…" : profile ? "Re-profile" : "Profile"}
-          </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-6 text-[10px] px-2"
+              onClick={handleProfile}
+              disabled={isLoading}
+            >
+              {isLoading ? "Running…" : profile ? "Re-profile" : "Profile"}
+            </Button>
+          </Tip>
         )}
       </div>
 
@@ -189,11 +232,56 @@ const PROPOSAL_KIND_LABEL: Record<Proposal["kind"], string> = {
   llm_reasoning: "LLM reasoning",
 };
 
+const PROPOSAL_KIND_TIP: Record<Proposal["kind"], string> = {
+  foreign_key:
+    "A foreign key constraint explicitly declared in the source schema (e.g. REFERENCES in SQLite). Near-certain relationship — confidence 0.95.",
+  soft_foreign_key:
+    "A likely FK detected from column naming patterns: a column named '{entity}_id' alongside a table called '{entity}'. Not declared in the schema but structurally matched — confidence 0.70.",
+  column_name_similarity:
+    "Relationship suggested by column-name similarity across two sources: exact match (+0.40), normalized match (+0.30), or Jaro-Winkler string distance above 0.85.",
+  sample_value_overlap:
+    "Relationship suggested because two columns across sources share a large fraction of their sample values — strong evidence one column references the other.",
+  embedding_similarity:
+    "Relationship suggested by semantic similarity of column names and sample values, computed using a text embedding model.",
+  llm_reasoning:
+    "Relationship suggested by an LLM that analysed both tables in context and reasoned about whether a connection exists.",
+};
+
+const STATUS_TIP: Record<Proposal["status"], string> = {
+  pending: "Not yet reviewed. Accepting this proposal will create entity types and a relationship in the schema graph.",
+  accepted: "Accepted — entity types and the relationship have been created in the schema graph.",
+  modified: "Accepted with a custom predicate or cardinality you edited. The modified values were used when promoting to the schema graph.",
+  rejected: "Dismissed — this proposal is excluded from the graph. Re-running analysis will not reintroduce it.",
+};
+
 const STATUS_COLOR: Record<Proposal["status"], string> = {
   pending: "text-muted-foreground",
   accepted: "text-green-600",
   modified: "text-blue-500",
   rejected: "text-muted-foreground/50",
+};
+
+const EVIDENCE_KEY_TIP: Record<string, string> = {
+  is_declared:
+    "Whether this FK was declared in the source schema. Declared FKs are near-certain; inferred ones are detected from naming patterns.",
+  link_columns:
+    "The column pair that links the two entities (from_column → to_column).",
+  to_pk:
+    "The primary key column on the target entity that the FK column references.",
+  pattern:
+    "The naming pattern that triggered this soft FK detection (e.g. 'user_id' matches the 'user' prefix).",
+  method:
+    "The detection method used to identify this as a FK candidate.",
+  jaro_winkler:
+    "Jaro-Winkler string similarity between the two column names (0–1). Scores above 0.85 contribute to the confidence. Handles typos and abbreviations better than exact matching.",
+  name_score:
+    "Score for column name matching: +0.40 for exact match, +0.30 for normalized match (same after stripping case and separators like underscores).",
+  fk_pattern_score:
+    "Score for the FK naming pattern: a column named '{entity}_id' pointing at a table called '{entity}'. Contributes +0.80 when detected.",
+  value_overlap:
+    "Fraction of sample values shared between the two columns. High overlap is strong evidence that one column references the other.",
+  total_score:
+    "Sum of all sub-scores (name match + FK pattern + Jaro-Winkler + value overlap + PK type match). Proposals are generated when total_score ≥ 0.40.",
 };
 
 function ProposalDetail({ proposal: p }: { proposal: Proposal }) {
@@ -226,23 +314,39 @@ function ProposalDetail({ proposal: p }: { proposal: Proposal }) {
       <Separator className="mb-3" />
 
       <DetailRow label="Status">
-        <p className={`text-xs font-medium capitalize ${STATUS_COLOR[p.status]}`}>
-          {p.status}
-        </p>
+        <Tip content={STATUS_TIP[p.status]} side="left">
+          <p className={`text-xs font-medium capitalize cursor-help ${STATUS_COLOR[p.status]}`}>
+            {p.status}
+          </p>
+        </Tip>
       </DetailRow>
 
       <DetailRow label="Confidence">
-        <p className="text-xs text-foreground">{confidencePct}%</p>
+        <Tip
+          content={`How certain the engine is that this relationship exists. Declared FK: 95%, soft FK name-pattern: 70%, cross-source heuristics vary. Always verify before accepting.`}
+          side="left"
+        >
+          <p className="text-xs text-foreground cursor-help">{confidencePct}%</p>
+        </Tip>
       </DetailRow>
 
       <DetailRow label="Kind">
-        <p className="text-xs text-foreground">{PROPOSAL_KIND_LABEL[p.kind]}</p>
+        <Tip content={PROPOSAL_KIND_TIP[p.kind]} side="left">
+          <p className="text-xs text-foreground cursor-help">
+            {PROPOSAL_KIND_LABEL[p.kind]}
+          </p>
+        </Tip>
       </DetailRow>
 
       <DetailRow label="Cardinality">
-        <p className="text-xs text-foreground font-mono">
-          {effectiveCardinality === "unknown" ? "—" : effectiveCardinality}
-        </p>
+        <Tip
+          content="Expected multiplicity of this relationship. 1:N means one source entity relates to many target entities; N:N means many-to-many. 'Unknown' means the engine couldn't determine it from sample data."
+          side="left"
+        >
+          <p className="text-xs text-foreground font-mono cursor-help">
+            {effectiveCardinality === "unknown" ? "—" : effectiveCardinality}
+          </p>
+        </Tip>
       </DetailRow>
 
       <Separator className="my-3" />
@@ -251,22 +355,36 @@ function ProposalDetail({ proposal: p }: { proposal: Proposal }) {
         Evidence
       </p>
       <div className="flex flex-col gap-1.5">
-        {Object.entries(p.evidence).map(([key, val]) => (
-          <div key={key} className="flex items-start justify-between gap-2">
-            <span className="text-[11px] text-muted-foreground">{key}</span>
-            <span className="text-right font-mono text-[11px] text-foreground">
-              {typeof val === "number"
-                ? val < 1
-                  ? `${(val * 100).toFixed(1)}%`
-                  : val.toFixed(2)
-                : typeof val === "boolean"
-                  ? val ? "yes" : "no"
-                  : Array.isArray(val)
-                    ? JSON.stringify(val)
-                    : String(val)}
-            </span>
-          </div>
-        ))}
+        {Object.entries(p.evidence).map(([key, val]) => {
+          const tip = EVIDENCE_KEY_TIP[key];
+          const formatted =
+            typeof val === "number"
+              ? val < 1
+                ? `${(val * 100).toFixed(1)}%`
+                : val.toFixed(2)
+              : typeof val === "boolean"
+                ? val ? "yes" : "no"
+                : Array.isArray(val)
+                  ? JSON.stringify(val)
+                  : String(val);
+
+          return (
+            <div key={key} className="flex items-start justify-between gap-2">
+              {tip ? (
+                <Tip content={tip} side="left">
+                  <span className="text-[11px] text-muted-foreground cursor-help underline decoration-dotted underline-offset-2">
+                    {key}
+                  </span>
+                </Tip>
+              ) : (
+                <span className="text-[11px] text-muted-foreground">{key}</span>
+              )}
+              <span className="text-right font-mono text-[11px] text-foreground">
+                {formatted}
+              </span>
+            </div>
+          );
+        })}
       </div>
 
       {(p.reviewedPredicate || p.reviewedCardinality) && (
@@ -286,6 +404,55 @@ function ProposalDetail({ proposal: p }: { proposal: Proposal }) {
             </DetailRow>
           )}
         </>
+      )}
+    </div>
+  );
+}
+
+// ── Entity type detail ────────────────────────────────────────────────────────
+
+function EntityTypeDetail({ et }: { et: EntityTypeWithBindings }) {
+  return (
+    <div className="flex flex-col gap-0 p-4">
+      <div className="mb-3 flex items-start gap-2">
+        <span className="mt-0.5 text-xl">🔷</span>
+        <div className="min-w-0">
+          <p className="font-semibold text-sm text-foreground break-words">
+            {et.entityType.name}
+          </p>
+          {et.entityType.label && (
+            <p className="text-xs text-muted-foreground mt-0.5">{et.entityType.label}</p>
+          )}
+        </div>
+      </div>
+      <Separator className="mb-3" />
+      <DetailRow label="Added">
+        <p className="text-[11px] text-muted-foreground">{formatDate(et.entityType.createdAt)}</p>
+      </DetailRow>
+      {et.entityType.description && (
+        <DetailRow label="Description">
+          <p className="text-xs text-foreground">{et.entityType.description}</p>
+        </DetailRow>
+      )}
+      <Separator className="my-3" />
+      <Tip
+        content="Source entities from your registered sources that are mapped to this canonical type. During export, records from all bound sources are merged under this type's RDF class. Add more bindings from the Catalog tab in the Schema Graph view."
+        side="left"
+      >
+        <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground cursor-help">
+          Source Bindings ({et.bindings.length})
+        </p>
+      </Tip>
+      {et.bindings.length === 0 ? (
+        <p className="text-xs text-muted-foreground">No source entities bound yet.</p>
+      ) : (
+        <div className="flex flex-col gap-1.5">
+          {et.bindings.map((b) => (
+            <div key={b.id} className="flex items-center gap-1.5 text-xs">
+              <span className="text-muted-foreground truncate">{b.entityName}</span>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );
@@ -334,65 +501,77 @@ const KIND_LABEL: Record<SourceKind, string> = {
   mysql: "MySQL",
 };
 
-const CAPABILITIES: Record<SourceKind, { label: string; enabled: boolean }[]> =
-  {
-    sqlite_file: [
-      { label: "Profile", enabled: true },
-      { label: "Sample rows", enabled: true },
-      { label: "Schema introspection", enabled: true },
-      { label: "Lazy export", enabled: true },
-      { label: "Enrichment", enabled: false },
-    ],
-    json_file: [
-      { label: "Profile", enabled: true },
-      { label: "Sample rows", enabled: true },
-      { label: "Schema introspection", enabled: false },
-      { label: "Lazy export", enabled: false },
-      { label: "Enrichment", enabled: false },
-    ],
-    csv_file: [
-      { label: "Profile", enabled: true },
-      { label: "Sample rows", enabled: true },
-      { label: "Schema introspection", enabled: false },
-      { label: "Lazy export", enabled: true },
-      { label: "Enrichment", enabled: false },
-    ],
-    markdown_folder: [
-      { label: "Profile", enabled: false },
-      { label: "Sample rows", enabled: false },
-      { label: "Schema introspection", enabled: false },
-      { label: "Lazy export", enabled: false },
-      { label: "Enrichment", enabled: true },
-    ],
-    pdf_file: [
-      { label: "Profile", enabled: false },
-      { label: "Sample rows", enabled: false },
-      { label: "Schema introspection", enabled: false },
-      { label: "Lazy export", enabled: false },
-      { label: "Enrichment", enabled: true },
-    ],
-    url: [
-      { label: "Profile", enabled: false },
-      { label: "Sample rows", enabled: false },
-      { label: "Schema introspection", enabled: false },
-      { label: "Lazy export", enabled: false },
-      { label: "Enrichment", enabled: true },
-    ],
-    postgres: [
-      { label: "Profile", enabled: true },
-      { label: "Sample rows", enabled: true },
-      { label: "Schema introspection", enabled: true },
-      { label: "Lazy export", enabled: true },
-      { label: "Enrichment", enabled: false },
-    ],
-    mysql: [
-      { label: "Profile", enabled: true },
-      { label: "Sample rows", enabled: true },
-      { label: "Schema introspection", enabled: true },
-      { label: "Lazy export", enabled: true },
-      { label: "Enrichment", enabled: false },
-    ],
-  };
+const CAPABILITY_TIP: Record<string, string> = {
+  Profile:
+    "Analyse this source's structure: column types, row counts, null rates, approximate unique value counts, and foreign key candidates. Results feed directly into connection proposal generation.",
+  "Sample rows":
+    "Load a small preview of actual records for inspection in the UI. Samples are used during cross-source matching to detect value overlap.",
+  "Schema introspection":
+    "Read declared table and column metadata directly from the source (e.g. PRAGMA table_info for SQLite). More accurate than type inference alone — provides declared PKs and FKs.",
+  "Lazy export":
+    "Stream records from this source row by row during export, without loading the full dataset into memory. Essential for large sources that don't fit in RAM.",
+  Enrichment:
+    "Extract entity types, relationships, and evidence from unstructured text using LLM-based analysis. Available for Markdown, PDF, and URL sources. Results appear as proposals in the Proposals view.",
+};
+
+const CAPABILITIES: Record<SourceKind, { label: string; enabled: boolean }[]> = {
+  sqlite_file: [
+    { label: "Profile", enabled: true },
+    { label: "Sample rows", enabled: true },
+    { label: "Schema introspection", enabled: true },
+    { label: "Lazy export", enabled: true },
+    { label: "Enrichment", enabled: false },
+  ],
+  json_file: [
+    { label: "Profile", enabled: true },
+    { label: "Sample rows", enabled: true },
+    { label: "Schema introspection", enabled: false },
+    { label: "Lazy export", enabled: false },
+    { label: "Enrichment", enabled: false },
+  ],
+  csv_file: [
+    { label: "Profile", enabled: true },
+    { label: "Sample rows", enabled: true },
+    { label: "Schema introspection", enabled: false },
+    { label: "Lazy export", enabled: true },
+    { label: "Enrichment", enabled: false },
+  ],
+  markdown_folder: [
+    { label: "Profile", enabled: false },
+    { label: "Sample rows", enabled: false },
+    { label: "Schema introspection", enabled: false },
+    { label: "Lazy export", enabled: false },
+    { label: "Enrichment", enabled: true },
+  ],
+  pdf_file: [
+    { label: "Profile", enabled: false },
+    { label: "Sample rows", enabled: false },
+    { label: "Schema introspection", enabled: false },
+    { label: "Lazy export", enabled: false },
+    { label: "Enrichment", enabled: true },
+  ],
+  url: [
+    { label: "Profile", enabled: false },
+    { label: "Sample rows", enabled: false },
+    { label: "Schema introspection", enabled: false },
+    { label: "Lazy export", enabled: false },
+    { label: "Enrichment", enabled: true },
+  ],
+  postgres: [
+    { label: "Profile", enabled: true },
+    { label: "Sample rows", enabled: true },
+    { label: "Schema introspection", enabled: true },
+    { label: "Lazy export", enabled: true },
+    { label: "Enrichment", enabled: false },
+  ],
+  mysql: [
+    { label: "Profile", enabled: true },
+    { label: "Sample rows", enabled: true },
+    { label: "Schema introspection", enabled: true },
+    { label: "Lazy export", enabled: true },
+    { label: "Enrichment", enabled: false },
+  ],
+};
 
 const PANEL_TITLE: Record<AppView, string> = {
   project: "Project Details",

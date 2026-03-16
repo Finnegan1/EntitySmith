@@ -6,7 +6,8 @@ import { DetailsPanel } from "./DetailsPanel";
 import { StatusBar } from "./StatusBar";
 import { NewProjectModal } from "./NewProjectModal";
 import { useProject } from "@/hooks/useProject";
-import type { AppView, Proposal, SourceDescriptor } from "@/types";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import type { AppView, EntityTypeWithBindings, Proposal, SourceDescriptor } from "@/types";
 
 export function AppShell() {
   const [activeView, setActiveView] = useState<AppView>("sources");
@@ -14,6 +15,7 @@ export function AppShell() {
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [selectedSource, setSelectedSource] = useState<SourceDescriptor | null>(null);
   const [selectedProposal, setSelectedProposal] = useState<Proposal | null>(null);
+  const [selectedEntityType, setSelectedEntityType] = useState<EntityTypeWithBindings | null>(null);
 
   const { project, isLoading, error, clearError, createProject, openProject } =
     useProject();
@@ -27,6 +29,7 @@ export function AppShell() {
   useEffect(() => {
     if (activeView !== "sources") setSelectedSource(null);
     if (activeView !== "proposals") setSelectedProposal(null);
+    if (activeView !== "schema-graph") setSelectedEntityType(null);
   }, [activeView]);
 
   function handleNewProject() {
@@ -49,6 +52,7 @@ export function AppShell() {
   const showDetails = detailsOpen && project !== null;
 
   return (
+    <TooltipProvider delayDuration={400}>
     <div className="flex h-screen w-full flex-col overflow-hidden bg-background text-foreground">
       <div className="flex flex-1 overflow-hidden">
         <Sidebar
@@ -68,6 +72,8 @@ export function AppShell() {
             onSourceSelect={setSelectedSource}
             selectedProposalId={selectedProposal?.id ?? null}
             onProposalSelect={setSelectedProposal}
+            selectedEntityTypeId={selectedEntityType?.entityType.id ?? null}
+            onEntityTypeSelect={setSelectedEntityType}
           />
         </main>
 
@@ -76,6 +82,7 @@ export function AppShell() {
             activeView={activeView}
             selectedSource={selectedSource}
             selectedProposal={selectedProposal}
+            selectedEntityType={selectedEntityType}
             onClose={() => setDetailsOpen(false)}
           />
         )}
@@ -91,5 +98,6 @@ export function AppShell() {
         error={error}
       />
     </div>
+    </TooltipProvider>
   );
 }

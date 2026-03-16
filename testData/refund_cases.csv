@@ -1,0 +1,6 @@
+refund_case_id,order_id,customer_id,reason_code,refund_amount,resolution_status,opened_at,closed_at,approved_by
+RFND-6101,ORD-5003,CUST-1003,wrong_form_factor,649.00,completed,2025-01-22T14:10:00Z,2025-01-24T10:20:00Z,ops.eu@entitysmith.test
+RFND-6102,ORD-5005,CUST-1005,damaged_in_transit,899.50,approved,2025-02-06T12:40:00Z,,finance.na@entitysmith.test
+RFND-6103,ORD-5009,CUST-1008,canceled_before_capture,1499.00,voided,2025-03-15T10:30:00Z,2025-03-15T11:59:00Z,ops.na@entitysmith.test
+RFND-6104,ORD-5007,CUST-1006,late_delivery_request,0.00,under_review,2025-03-06T09:14:00Z,,finance.emea@entitysmith.test
+RFND-6105,ORD-5002,CUST-1002,pricing_adjustment,129.90,completed,2025-01-18T15:02:00Z,2025-01-19T09:50:00Z,partner.ops@entitysmith.test

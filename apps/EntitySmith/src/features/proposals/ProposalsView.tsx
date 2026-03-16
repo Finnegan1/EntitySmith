@@ -11,17 +11,43 @@ import {
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useProposals } from "@/hooks/useProposals";
 import type { Proposal, ProposalStatus } from "@/types";
 
 type StatusTab = "all" | ProposalStatus;
 type OriginFilter = "all" | "declared_fk" | "heuristic";
 
+// ── Tooltip helper ─────────────────────────────────────────────────────────────
+
+function Tip({
+  children,
+  content,
+  side = "top",
+}: {
+  children: React.ReactNode;
+  content: string;
+  side?: "top" | "bottom" | "left" | "right";
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent side={side}>
+        <p className="max-w-[260px]">{content}</p>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+// ── Props ─────────────────────────────────────────────────────────────────────
+
 interface ProposalsViewProps {
   projectId: string;
   selectedProposalId: string | null;
   onProposalSelect: (proposal: Proposal | null) => void;
 }
+
+// ── Main component ─────────────────────────────────────────────────────────────
 
 export function ProposalsView({
   projectId: _projectId,
@@ -42,7 +68,6 @@ export function ProposalsView({
     clearError,
   } = useProposals();
 
-  // Client-side filtering on top of the full list
   const filtered = proposals.filter((p) => {
     const statusOk = statusTab === "all" || p.status === statusTab;
     const originOk = originFilter === "all" || p.origin === originFilter;
@@ -55,55 +80,62 @@ export function ProposalsView({
       <div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-2.5">
         <div className="flex items-center gap-2">
           {STATUS_TABS.map((tab) => (
-            <button
-              key={tab.value}
-              onClick={() => setStatusTab(tab.value)}
-              className={cn(
-                "rounded px-2.5 py-1 text-xs transition-colors",
-                statusTab === tab.value
-                  ? "bg-accent text-accent-foreground font-medium"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {tab.label}
-              {tab.value === "pending" && pendingCount > 0 && (
-                <span className="ml-1.5 rounded-full bg-primary px-1.5 py-0.5 text-[10px] text-primary-foreground">
-                  {pendingCount}
-                </span>
-              )}
-            </button>
+            <Tip key={tab.value} content={tab.tip} side="bottom">
+              <button
+                onClick={() => setStatusTab(tab.value)}
+                className={cn(
+                  "rounded px-2.5 py-1 text-xs transition-colors",
+                  statusTab === tab.value
+                    ? "bg-accent text-accent-foreground font-medium"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {tab.label}
+                {tab.value === "pending" && pendingCount > 0 && (
+                  <span className="ml-1.5 rounded-full bg-primary px-1.5 py-0.5 text-[10px] text-primary-foreground">
+                    {pendingCount}
+                  </span>
+                )}
+              </button>
+            </Tip>
           ))}
           <div className="mx-1 h-4 w-px bg-border" />
           {ORIGIN_FILTERS.map((f) => (
-            <button
-              key={f.value}
-              onClick={() => setOriginFilter(f.value)}
-              className={cn(
-                "rounded px-2 py-1 text-[11px] transition-colors",
-                originFilter === f.value
-                  ? "bg-accent text-accent-foreground"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {f.label}
-            </button>
+            <Tip key={f.value} content={f.tip} side="bottom">
+              <button
+                onClick={() => setOriginFilter(f.value)}
+                className={cn(
+                  "rounded px-2 py-1 text-[11px] transition-colors",
+                  originFilter === f.value
+                    ? "bg-accent text-accent-foreground"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {f.label}
+              </button>
+            </Tip>
           ))}
         </div>
 
-        <Button
-          size="sm"
-          variant="outline"
-          className="h-7 gap-1.5 text-xs"
-          onClick={generateProposals}
-          disabled={isGenerating || isLoading}
+        <Tip
+          content="Analyse all registered and profiled sources to detect connection proposals. Runs FK detection, naming-pattern heuristics, and value overlap checks. Previously accepted or rejected proposals are preserved."
+          side="bottom"
         >
-          {isGenerating ? (
-            <Loader2 size={12} className="animate-spin" />
-          ) : (
-            <RefreshCw size={12} />
-          )}
-          {isGenerating ? "Running…" : "Run Analysis"}
-        </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 gap-1.5 text-xs"
+            onClick={generateProposals}
+            disabled={isGenerating || isLoading}
+          >
+            {isGenerating ? (
+              <Loader2 size={12} className="animate-spin" />
+            ) : (
+              <RefreshCw size={12} />
+            )}
+            {isGenerating ? "Running…" : "Run Analysis"}
+          </Button>
+        </Tip>
       </div>
 
       {/* Error bar */}
@@ -214,9 +246,14 @@ function ProposalRow({
           <div className="flex flex-wrap items-center gap-1.5">
             <EntityChip entity={p.fromEntity} column={p.fromColumn} />
             <ArrowRight size={12} className="shrink-0 text-muted-foreground" />
-            <span className="font-mono text-[11px] text-primary">
-              {effectivePredicate}
-            </span>
+            <Tip
+              content={`Relationship predicate — the named edge in the graph. This is the RDF property that will link the two entity types in the exported knowledge graph.`}
+              side="top"
+            >
+              <span className="font-mono text-[11px] text-primary cursor-help">
+                {effectivePredicate}
+              </span>
+            </Tip>
             <ArrowRight size={12} className="shrink-0 text-muted-foreground" />
             <EntityChip entity={p.toEntity} column={p.toColumn} />
           </div>
@@ -225,31 +262,48 @@ function ProposalRow({
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
             <ConfidenceBadge confidence={p.confidence} />
             <KindBadge kind={p.kind} />
-            <span className="text-[10px] text-muted-foreground">
-              {p.suggestedCardinality !== "unknown" && p.suggestedCardinality}
-            </span>
+            {p.suggestedCardinality !== "unknown" && (
+              <Tip
+                content="Expected multiplicity: 1:1 (one-to-one), 1:N (one-to-many), or N:N (many-to-many). Inferred from the distribution of values in the sample data."
+                side="top"
+              >
+                <span className="text-[10px] text-muted-foreground cursor-help">
+                  {p.suggestedCardinality}
+                </span>
+              </Tip>
+            )}
           </div>
         </div>
 
-        {/* Actions — stop clicks here from deselecting the row */}
+        {/* Actions */}
         <div
           className="flex shrink-0 items-center gap-1"
           onClick={(e) => e.stopPropagation()}
         >
           {isPending && !expanded && (
             <>
-              <ActionButton
-                label="Accept"
-                variant="accept"
-                busy={busy}
-                onClick={() => handle("accept")}
-              />
-              <ActionButton
-                label="Reject"
-                variant="reject"
-                busy={busy}
-                onClick={() => handle("reject")}
-              />
+              <Tip
+                content="Accept this proposal: creates canonical entity types for both endpoints and adds the relationship to the schema graph."
+                side="top"
+              >
+                <ActionButton
+                  label="Accept"
+                  variant="accept"
+                  busy={busy}
+                  onClick={() => handle("accept")}
+                />
+              </Tip>
+              <Tip
+                content="Reject this proposal: marks it as dismissed. It will not be reintroduced by future analysis runs."
+                side="top"
+              >
+                <ActionButton
+                  label="Reject"
+                  variant="reject"
+                  busy={busy}
+                  onClick={() => handle("reject")}
+                />
+              </Tip>
             </>
           )}
           <button
@@ -271,9 +325,14 @@ function ProposalRow({
           {isPending && (
             <div className="mt-3 flex items-end gap-2 border-t border-border/50 pt-3">
               <div className="flex flex-col gap-1">
-                <label className="text-[10px] text-muted-foreground">
-                  Predicate
-                </label>
+                <Tip
+                  content="The RDF predicate name used for this relationship in the exported graph. You can rename it to something more semantically meaningful (e.g. 'places' instead of 'has_user')."
+                  side="top"
+                >
+                  <label className="text-[10px] text-muted-foreground cursor-help">
+                    Predicate
+                  </label>
+                </Tip>
                 <input
                   type="text"
                   value={editPredicate}
@@ -282,9 +341,14 @@ function ProposalRow({
                 />
               </div>
               <div className="flex flex-col gap-1">
-                <label className="text-[10px] text-muted-foreground">
-                  Cardinality
-                </label>
+                <Tip
+                  content="How many target entities each source entity relates to. 1:N means one source record links to many target records (e.g. one User places many Orders)."
+                  side="top"
+                >
+                  <label className="text-[10px] text-muted-foreground cursor-help">
+                    Cardinality
+                  </label>
+                </Tip>
                 <select
                   value={editCardinality}
                   onChange={(e) => setEditCardinality(e.target.value)}
@@ -297,18 +361,28 @@ function ProposalRow({
                 </select>
               </div>
               <div className="flex gap-1.5">
-                <ActionButton
-                  label="Save & Accept"
-                  variant="accept"
-                  busy={busy}
-                  onClick={() => handle("modify")}
-                />
-                <ActionButton
-                  label="Reject"
-                  variant="reject"
-                  busy={busy}
-                  onClick={() => handle("reject")}
-                />
+                <Tip
+                  content="Accept with your edited predicate and cardinality. Creates entity types and the relationship in the schema graph using your custom values."
+                  side="top"
+                >
+                  <ActionButton
+                    label="Save & Accept"
+                    variant="accept"
+                    busy={busy}
+                    onClick={() => handle("modify")}
+                  />
+                </Tip>
+                <Tip
+                  content="Reject this proposal. It will not be reintroduced by future analysis runs."
+                  side="top"
+                >
+                  <ActionButton
+                    label="Reject"
+                    variant="reject"
+                    busy={busy}
+                    onClick={() => handle("reject")}
+                  />
+                </Tip>
               </div>
             </div>
           )}
@@ -336,15 +410,25 @@ function EvidenceSection({
         <EvidenceRow
           label="Type"
           value={kind === "foreign_key" ? "Declared foreign key" : "Name pattern"}
+          tip={
+            kind === "foreign_key"
+              ? "This FK was explicitly declared in the source schema (e.g. REFERENCES in SQLite). Near-certain relationship — confidence 0.95."
+              : "This FK was inferred from column naming patterns (e.g. 'user_id' → 'users.id'). Not declared in the schema, but structurally matched — confidence 0.70."
+          }
         />
         {linkCols && (
           <EvidenceRow
             label="Link"
             value={linkCols.map((c) => `${c.from} → ${c.to}`).join(", ")}
+            tip="The column pair that links the two entities — the FK column on the source side and the referenced column (usually the PK) on the target side."
           />
         )}
         {evidence.to_pk && (
-          <EvidenceRow label="Target PK" value={String(evidence.to_pk)} />
+          <EvidenceRow
+            label="Target PK"
+            value={String(evidence.to_pk)}
+            tip="The primary key column on the target entity that this FK column references."
+          />
         )}
       </>
     );
@@ -356,18 +440,22 @@ function EvidenceSection({
         <EvidenceRow
           label="Jaro-Winkler"
           value={pct(evidence.jaro_winkler as number | undefined)}
+          tip="String similarity between the two column names using the Jaro-Winkler algorithm (0–1). Scores above 0.85 contribute to the confidence. Handles typos and abbreviations better than exact string matching."
         />
         <EvidenceRow
           label="Name score"
           value={fmt(evidence.name_score as number | undefined)}
+          tip="Score for column name matching: +0.40 for an exact match, +0.30 for a normalized match (same after lowercasing and stripping separators like underscores and hyphens)."
         />
         <EvidenceRow
           label="FK pattern score"
           value={fmt(evidence.fk_pattern_score as number | undefined)}
+          tip="Score for the FK naming pattern: a column named '{entity}_id' pointing at a table called '{entity}'. Contributes +0.80 when detected — the strongest single signal."
         />
         <EvidenceRow
           label="Value overlap"
           value={pct(evidence.value_overlap as number | undefined)}
+          tip="Fraction of sample values shared between the two columns. High overlap means many values in one column appear in the other — strong evidence of a reference relationship."
         />
       </>
     );
@@ -379,10 +467,12 @@ function EvidenceSection({
         <EvidenceRow
           label="Value overlap"
           value={pct(evidence.value_overlap as number | undefined)}
+          tip="Fraction of sample values shared between the two columns. This was the primary signal: a large proportion of values in one column appear in the other."
         />
         <EvidenceRow
           label="Name score"
           value={fmt(evidence.name_score as number | undefined)}
+          tip="Additional score from column name matching. Contributes to overall confidence alongside the value overlap."
         />
       </>
     );
@@ -391,10 +481,26 @@ function EvidenceSection({
   return <EvidenceRow label="Evidence" value={JSON.stringify(evidence)} />;
 }
 
-function EvidenceRow({ label, value }: { label: string; value: string }) {
+function EvidenceRow({
+  label,
+  value,
+  tip,
+}: {
+  label: string;
+  value: string;
+  tip?: string;
+}) {
   return (
     <>
-      <span className="text-muted-foreground">{label}</span>
+      {tip ? (
+        <Tip content={tip} side="left">
+          <span className="text-muted-foreground cursor-help underline decoration-dotted underline-offset-2">
+            {label}
+          </span>
+        </Tip>
+      ) : (
+        <span className="text-muted-foreground">{label}</span>
+      )}
       <span className="font-mono text-foreground">{value}</span>
     </>
   );
@@ -420,11 +526,16 @@ function EntityChip({
   column: string;
 }) {
   return (
-    <span className="flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">
-      <span className="text-foreground">{entity}</span>
-      <span className="text-muted-foreground">.</span>
-      <span className="text-muted-foreground">{column}</span>
-    </span>
+    <Tip
+      content={`Source entity "${entity}", column "${column}". This is one endpoint of the proposed relationship.`}
+      side="top"
+    >
+      <span className="flex cursor-help items-center gap-1 rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">
+        <span className="text-foreground">{entity}</span>
+        <span className="text-muted-foreground">.</span>
+        <span className="text-muted-foreground">{column}</span>
+      </span>
+    </Tip>
   );
 }
 
@@ -436,18 +547,28 @@ function ConfidenceBadge({ confidence }: { confidence: number }) {
       : pct >= 60
         ? "text-yellow-600"
         : "text-muted-foreground";
+  const label =
+    pct >= 85 ? "High confidence" : pct >= 60 ? "Medium confidence" : "Low confidence";
+
   return (
-    <span className={cn("text-[10px] font-semibold tabular-nums", color)}>
-      {pct}%
-    </span>
+    <Tip
+      content={`${label} (${pct}%). Declared FKs score 95%, soft FK name patterns score 70%, cross-source heuristics vary by evidence strength. Always verify before accepting.`}
+      side="top"
+    >
+      <span className={cn("text-[10px] font-semibold tabular-nums cursor-help", color)}>
+        {pct}%
+      </span>
+    </Tip>
   );
 }
 
 function KindBadge({ kind }: { kind: Proposal["kind"] }) {
   return (
-    <Badge variant="outline" className="h-4 px-1 text-[10px]">
-      {KIND_LABEL[kind]}
-    </Badge>
+    <Tip content={KIND_TIP[kind]} side="top">
+      <Badge variant="outline" className="h-4 px-1 text-[10px] cursor-help">
+        {KIND_LABEL[kind]}
+      </Badge>
+    </Tip>
   );
 }
 
@@ -514,18 +635,50 @@ function EmptyState({ statusTab }: { statusTab: StatusTab }) {
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const STATUS_TABS: { value: StatusTab; label: string }[] = [
-  { value: "all", label: "All" },
-  { value: "pending", label: "Pending" },
-  { value: "accepted", label: "Accepted" },
-  { value: "modified", label: "Modified" },
-  { value: "rejected", label: "Rejected" },
+const STATUS_TABS: { value: StatusTab; label: string; tip: string }[] = [
+  {
+    value: "all",
+    label: "All",
+    tip: "Show all proposals regardless of status.",
+  },
+  {
+    value: "pending",
+    label: "Pending",
+    tip: "Proposals not yet reviewed. These need your attention — accept to promote them into the schema graph, reject to dismiss.",
+  },
+  {
+    value: "accepted",
+    label: "Accepted",
+    tip: "Proposals you accepted. Entity types and relationships have been created in the schema graph for each of these.",
+  },
+  {
+    value: "modified",
+    label: "Modified",
+    tip: "Proposals accepted with a custom predicate or cardinality you edited. The modified values were used when creating the schema graph relationship.",
+  },
+  {
+    value: "rejected",
+    label: "Rejected",
+    tip: "Proposals you dismissed. They are excluded from the graph and won't be reintroduced by future analysis runs.",
+  },
 ];
 
-const ORIGIN_FILTERS: { value: OriginFilter; label: string }[] = [
-  { value: "all", label: "All origins" },
-  { value: "declared_fk", label: "FK" },
-  { value: "heuristic", label: "Heuristic" },
+const ORIGIN_FILTERS: { value: OriginFilter; label: string; tip: string }[] = [
+  {
+    value: "all",
+    label: "All origins",
+    tip: "Show proposals from all detection methods.",
+  },
+  {
+    value: "declared_fk",
+    label: "FK",
+    tip: "Proposals derived from declared or inferred foreign keys in the source schema. Highest confidence — the source structure itself implies the relationship.",
+  },
+  {
+    value: "heuristic",
+    label: "Heuristic",
+    tip: "Proposals derived from column-name similarity (Jaro-Winkler, exact, normalized) and sample-value overlap across sources. No LLM needed — purely structural analysis.",
+  },
 ];
 
 const KIND_LABEL: Record<Proposal["kind"], string> = {
@@ -535,4 +688,19 @@ const KIND_LABEL: Record<Proposal["kind"], string> = {
   sample_value_overlap: "Value overlap",
   embedding_similarity: "Embedding",
   llm_reasoning: "LLM",
+};
+
+const KIND_TIP: Record<Proposal["kind"], string> = {
+  foreign_key:
+    "Declared foreign key — a REFERENCES constraint explicitly defined in the source schema. Near-certain relationship, confidence 0.95.",
+  soft_foreign_key:
+    "Soft foreign key — inferred from column naming patterns (e.g. 'user_id' column alongside a 'users' table). Not declared, but structurally matched. Confidence 0.70.",
+  column_name_similarity:
+    "Detected by column-name similarity across two sources: exact name match, normalized match (case/separator-insensitive), or Jaro-Winkler string distance above 0.85.",
+  sample_value_overlap:
+    "Detected because two columns across sources share a large fraction of their sample values — strong evidence that one column references the other.",
+  embedding_similarity:
+    "Detected by semantic similarity between column names and sample values, computed using a text embedding model.",
+  llm_reasoning:
+    "Suggested by an LLM that analysed both source entities in context and reasoned about whether a connection exists.",
 };

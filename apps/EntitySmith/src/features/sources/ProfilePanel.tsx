@@ -1,13 +1,40 @@
 import { Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { FullSourceProfile, SourceAttributeProfile } from "@/types";
+
+// ── Tooltip helper ─────────────────────────────────────────────────────────────
+
+function Tip({
+  children,
+  content,
+  side = "top",
+}: {
+  children: React.ReactNode;
+  content: string;
+  side?: "top" | "bottom" | "left" | "right";
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent side={side}>
+        <p className="max-w-[260px]">{content}</p>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+// ── Main component ─────────────────────────────────────────────────────────────
 
 interface ProfilePanelProps {
   profile: FullSourceProfile;
 }
 
 export function ProfilePanel({ profile }: ProfilePanelProps) {
+  const declaredFkCount = profile.fkCandidates.filter((f) => f.isDeclared).length;
+  const inferredFkCount = profile.fkCandidates.filter((f) => !f.isDeclared).length;
+
   return (
     <div className="flex flex-col gap-3">
       {/* Summary row */}
@@ -21,18 +48,28 @@ export function ProfilePanel({ profile }: ProfilePanelProps) {
         </span>
       </div>
 
-      {/* FK candidates badge */}
+      {/* FK candidates badges */}
       {profile.fkCandidates.length > 0 && (
         <div className="flex items-center gap-1.5">
-          <Badge variant="secondary" className="text-[10px]">
-            {profile.fkCandidates.filter((f) => f.isDeclared).length} declared
-            FK
-          </Badge>
-          {profile.fkCandidates.filter((f) => !f.isDeclared).length > 0 && (
-            <Badge variant="outline" className="text-[10px]">
-              {profile.fkCandidates.filter((f) => !f.isDeclared).length}{" "}
-              inferred FK
-            </Badge>
+          {declaredFkCount > 0 && (
+            <Tip
+              content="Foreign keys explicitly declared in the source schema (e.g. REFERENCES constraints in SQLite). Near-certain relationships — the source itself asserts them."
+              side="right"
+            >
+              <Badge variant="secondary" className="text-[10px] cursor-help">
+                {declaredFkCount} declared FK
+              </Badge>
+            </Tip>
+          )}
+          {inferredFkCount > 0 && (
+            <Tip
+              content="Foreign key candidates detected by column naming patterns — e.g. a column named 'user_id' alongside a table called 'users'. Not declared in the schema but structurally likely."
+              side="right"
+            >
+              <Badge variant="outline" className="text-[10px] cursor-help">
+                {inferredFkCount} inferred FK
+              </Badge>
+            </Tip>
           )}
         </div>
       )}
@@ -48,9 +85,14 @@ export function ProfilePanel({ profile }: ProfilePanelProps) {
       {profile.fkCandidates.length > 0 && (
         <>
           <Separator />
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-            Foreign Keys
-          </p>
+          <Tip
+            content="Relationships between entities in this source detected during profiling. Declared FKs come from schema constraints; inferred FKs are detected from column naming patterns."
+            side="right"
+          >
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground cursor-help">
+              Foreign Keys
+            </p>
+          </Tip>
           <div className="flex flex-col gap-1.5">
             {profile.fkCandidates.map((fk, i) => (
               <div key={i} className="rounded-md border border-border p-2 text-[11px]">
@@ -63,12 +105,21 @@ export function ProfilePanel({ profile }: ProfilePanelProps) {
                   <span className="text-muted-foreground">.</span>
                   <span className="font-medium">{fk.toColumn}</span>
                 </div>
-                <Badge
-                  variant={fk.isDeclared ? "secondary" : "outline"}
-                  className="mt-1 text-[9px]"
+                <Tip
+                  content={
+                    fk.isDeclared
+                      ? "Explicitly declared in the source schema. High-confidence relationship."
+                      : "Inferred from column naming pattern. Not declared in the source but structurally matched."
+                  }
+                  side="right"
                 >
-                  {fk.isDeclared ? "declared" : "inferred"}
-                </Badge>
+                  <Badge
+                    variant={fk.isDeclared ? "secondary" : "outline"}
+                    className="mt-1 text-[9px] cursor-help"
+                  >
+                    {fk.isDeclared ? "declared" : "inferred"}
+                  </Badge>
+                </Tip>
               </div>
             ))}
           </div>
@@ -90,9 +141,11 @@ function EntitySection({
         <p className="text-xs font-semibold text-foreground font-mono">
           {ewa.profile.name}
         </p>
-        <span className="text-[10px] text-muted-foreground">
-          {ewa.profile.rowCount.toLocaleString()} rows
-        </span>
+        <Tip content="Total number of records in this entity, counted during profiling." side="left">
+          <span className="text-[10px] text-muted-foreground cursor-help">
+            {ewa.profile.rowCount.toLocaleString()} rows
+          </span>
+        </Tip>
       </div>
 
       {/* Attribute list */}
@@ -110,46 +163,78 @@ function AttributeRow({ attr }: { attr: SourceAttributeProfile }) {
     <div className="flex flex-col gap-0.5 px-2.5 py-1.5">
       <div className="flex items-center gap-1.5">
         {attr.isPk && (
-          <span className="text-[9px] font-bold text-amber-600 uppercase">
-            PK
-          </span>
+          <Tip
+            content="Primary key — this column uniquely identifies each row. It will be used as the default subject column for URI minting during export (the identifier in the generated RDF triples)."
+            side="right"
+          >
+            <span className="text-[9px] font-bold text-amber-600 uppercase cursor-help">
+              PK
+            </span>
+          </Tip>
         )}
         <span className="flex-1 truncate text-[11px] font-medium text-foreground font-mono">
           {attr.name}
         </span>
-        <Badge variant="outline" className="shrink-0 text-[9px] font-mono">
-          {attr.inferredType}
-        </Badge>
+        <Tip
+          content={`Inferred data type for this column, determined from the sampled values. Used to assign XSD datatypes in the exported RDF (e.g. xsd:integer, xsd:date).`}
+          side="left"
+        >
+          <Badge variant="outline" className="shrink-0 text-[9px] font-mono cursor-help">
+            {attr.inferredType}
+          </Badge>
+        </Tip>
       </div>
 
-      {/* Stats bar */}
+      {/* Stats row */}
       <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
         {attr.isNullable && attr.nullPct > 0 && (
-          <span>{Math.round(attr.nullPct * 100)}% null</span>
+          <Tip
+            content={`${Math.round(attr.nullPct * 100)}% of rows have no value for this column. High null rates on a primary key will cause those rows to be skipped during export.`}
+            side="right"
+          >
+            <span className="cursor-help">{Math.round(attr.nullPct * 100)}% null</span>
+          </Tip>
         )}
-        <span className={attr.uniquePct > 0.95 ? "text-blue-600" : ""}>
-          {Math.round(attr.uniquePct * 100)}% unique
-        </span>
-        {attr.minValue != null && attr.maxValue != null && (
-          <span className="truncate font-mono">
-            [{attr.minValue} – {attr.maxValue}]
+        <Tip
+          content={`${Math.round(attr.uniquePct * 100)}% of values in this column are distinct. Near 100% suggests a good primary key or natural identifier. Low uniqueness suggests a categorical or foreign key column.`}
+          side="right"
+        >
+          <span
+            className={`cursor-help ${attr.uniquePct > 0.95 ? "text-blue-600" : ""}`}
+          >
+            {Math.round(attr.uniquePct * 100)}% unique
           </span>
+        </Tip>
+        {attr.minValue != null && attr.maxValue != null && (
+          <Tip
+            content="Minimum and maximum values observed across sampled rows. Useful for spotting data ranges, outliers, or unexpected values."
+            side="right"
+          >
+            <span className="truncate font-mono cursor-help">
+              [{attr.minValue} – {attr.maxValue}]
+            </span>
+          </Tip>
         )}
       </div>
 
       {/* Top values */}
       {attr.topValues.length > 0 && (
-        <div className="mt-0.5 flex flex-wrap gap-1">
-          {attr.topValues.map((tv) => (
-            <span
-              key={tv.value}
-              className="inline-flex items-center gap-0.5 rounded bg-muted px-1 py-0.5 font-mono text-[9px]"
-            >
-              {tv.value}
-              <span className="text-muted-foreground">×{tv.count}</span>
-            </span>
-          ))}
-        </div>
+        <Tip
+          content="Most frequent values found during profiling, with occurrence counts. Helps identify categorical fields, FK references, or data quality issues like inconsistent formatting."
+          side="right"
+        >
+          <div className="mt-0.5 flex flex-wrap gap-1 cursor-help">
+            {attr.topValues.map((tv) => (
+              <span
+                key={tv.value}
+                className="inline-flex items-center gap-0.5 rounded bg-muted px-1 py-0.5 font-mono text-[9px]"
+              >
+                {tv.value}
+                <span className="text-muted-foreground">×{tv.count}</span>
+              </span>
+            ))}
+          </div>
+        </Tip>
       )}
     </div>
   );

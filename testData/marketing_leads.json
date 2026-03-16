@@ -1,0 +1,94 @@
+{
+  "source": "marketing_automation_export",
+  "capturedAt": "2025-03-16T08:35:00Z",
+  "leads": [
+    {
+      "lead_id": "LEAD-8101",
+      "full_name": "Maya Patel",
+      "email": "maya.patel@alderaerospace.com",
+      "company": "Alder Aerospace",
+      "country_code": "US",
+      "interest_sku": "AERO-SEN-01",
+      "converted_customer_id": "CUST-1001",
+      "lead_status": "customer",
+      "source_campaign": "webinar_q4"
+    },
+    {
+      "lead_id": "LEAD-8102",
+      "full_name": "Jonas Meyer",
+      "email": "jonas.meyer@northgrid.io",
+      "company": "NorthGrid",
+      "country_code": "DE",
+      "interest_sku": "GRID-GW-02",
+      "converted_customer_id": "CUST-1002",
+      "lead_status": "customer",
+      "source_campaign": "partner_referral"
+    },
+    {
+      "lead_id": "LEAD-8103",
+      "full_name": "Elena Rossi",
+      "email": "elena.rossi@solis-logistics.eu",
+      "company": "Solis Logistics",
+      "country_code": "IT",
+      "interest_sku": "SOL-EDGE-07",
+      "converted_customer_id": "CUST-1003",
+      "lead_status": "customer",
+      "source_campaign": "field_event_milan"
+    },
+    {
+      "lead_id": "LEAD-8104",
+      "full_name": "Naomi Chen",
+      "email": "naomi.chen@novaretail.sg",
+      "company": "Nova Retail",
+      "country_code": "SG",
+      "interest_sku": "RETL-POS-09",
+      "converted_customer_id": "CUST-1004",
+      "lead_status": "customer",
+      "source_campaign": "retail_apac_summit"
+    },
+    {
+      "lead_id": "LEAD-8105",
+      "full_name": "Daniel Brooks",
+      "email": "daniel.brooks@ridgehealth.org",
+      "company": "Ridge Health",
+      "country_code": "US",
+      "interest_sku": "HLTH-IOT-03",
+      "converted_customer_id": "CUST-1005",
+      "lead_status": "customer",
+      "source_campaign": "healthcare_demo"
+    },
+    {
+      "lead_id": "LEAD-8106",
+      "full_name": "Greta Olsen",
+      "email": "greta.olsen@polartransit.no",
+      "company": "Polar Transit",
+      "country_code": "NO",
+      "interest_sku": "GRID-GW-02",
+      "converted_customer_id": null,
+      "lead_status": "sales_qualified",
+      "source_campaign": "nordics_outbound"
+    },
+    {
+      "lead_id": "LEAD-8107",
+      "full_name": "Tom Alvarez",
+      "email": "tom.alvarez@cascadebio.ai",
+      "company": "Cascade Bio",
+      "country_code": "US",
+      "interest_sku": "HLTH-IOT-03",
+      "converted_customer_id": null,
+      "lead_status": "marketing_qualified",
+      "source_campaign": "life_sciences_newsletter"
+    },
+    {
+      "lead_id": "LEAD-8108",
+      "full_name": "Sara Lindholm",
+      "email": "sara.lindholm@northharbor.se",
+      "company": "North Harbor",
+      "country_code": "SE",
+      "interest_sku": "FOOD-COLD-11",
+      "converted_customer_id": null,
+      "lead_status": "new",
+      "source_campaign": "inbound_download"
+    }
+  ]
+}

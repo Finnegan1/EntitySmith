@@ -358,6 +358,12 @@ fn compute_value_overlap(a: &[TopValue], b: &[TopValue]) -> f64 {
 }
 
 /// Build a Proposal with all fields set.
+///
+/// The proposal ID is a deterministic UUID v5 derived from the logical key
+/// (project_id, kind, from_source, from_entity, from_col, to_source, to_entity,
+/// to_col). This ensures that re-running analysis produces the same ID for the
+/// same logical proposal, so `INSERT OR IGNORE` in `save_proposals` correctly
+/// skips proposals that have already been accepted or rejected.
 #[allow(clippy::too_many_arguments)]
 fn make_proposal(
     project_id: &str,
@@ -376,8 +382,20 @@ fn make_proposal(
     evidence: serde_json::Value,
 ) -> Proposal {
     let now = Utc::now().to_rfc3339();
+    let logical_key = format!(
+        "{}|{}|{}|{}|{}|{}|{}|{}",
+        project_id,
+        kind.to_db_str(),
+        from_source_id,
+        from_entity,
+        from_column,
+        to_source_id,
+        to_entity,
+        to_column,
+    );
+    let id = Uuid::new_v5(&Uuid::NAMESPACE_OID, logical_key.as_bytes()).to_string();
     Proposal {
-        id: Uuid::new_v4().to_string(),
+        id,
         project_id: project_id.to_string(),
         kind,
         status,

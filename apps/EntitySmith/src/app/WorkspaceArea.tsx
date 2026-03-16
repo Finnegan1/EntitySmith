@@ -10,7 +10,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { SourcesView } from "@/features/sources/SourcesView";
 import { ProposalsView } from "@/features/proposals/ProposalsView";
-import type { AppView, Proposal, ProjectState, SourceDescriptor } from "@/types";
+import { SchemaGraphView } from "@/features/schema-graph";
+import type { AppView, EntityTypeWithBindings, Proposal, ProjectState, SourceDescriptor } from "@/types";
 
 interface WorkspaceAreaProps {
   activeView: AppView;
@@ -22,6 +23,8 @@ interface WorkspaceAreaProps {
   onSourceSelect: (source: SourceDescriptor | null) => void;
   selectedProposalId: string | null;
   onProposalSelect: (proposal: Proposal | null) => void;
+  selectedEntityTypeId: string | null;
+  onEntityTypeSelect: (et: EntityTypeWithBindings | null) => void;
 }
 
 export function WorkspaceArea({
@@ -34,6 +37,8 @@ export function WorkspaceArea({
   onSourceSelect,
   selectedProposalId,
   onProposalSelect,
+  selectedEntityTypeId,
+  onEntityTypeSelect,
 }: WorkspaceAreaProps) {
   if (!project) {
     return (
@@ -60,6 +65,12 @@ export function WorkspaceArea({
             projectId={project.id}
             selectedProposalId={selectedProposalId}
             onProposalSelect={onProposalSelect}
+          />
+        ) : activeView === "schema-graph" ? (
+          <SchemaGraphView
+            projectId={project.id}
+            selectedEntityTypeId={selectedEntityTypeId}
+            onEntityTypeSelect={onEntityTypeSelect}
           />
         ) : (
           <div className="flex h-full items-center justify-center p-6">

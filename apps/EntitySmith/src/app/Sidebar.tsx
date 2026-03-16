@@ -8,6 +8,7 @@ import {
   Layers,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { AppView } from "@/types";
 
 interface NavItem {
@@ -15,6 +16,7 @@ interface NavItem {
   label: string;
   icon: React.ReactNode;
   group: "main" | "bottom";
+  tip: string;
 }
 
 const NAV_ITEMS: NavItem[] = [
@@ -23,36 +25,42 @@ const NAV_ITEMS: NavItem[] = [
     label: "Sources",
     icon: <Database size={16} />,
     group: "main",
+    tip: "Register your data sources: SQLite files, CSVs, JSON files, Markdown folders, PDFs, and URLs. Profiling runs automatically when a structured source is added, detecting column types, row counts, and foreign key candidates.",
   },
   {
     view: "schema-graph",
     label: "Schema Graph",
     icon: <GitFork size={16} />,
     group: "main",
+    tip: "Build the canonical schema: entity types (e.g. User, Order) as nodes and named relationships as edges. Bind discovered source entities to canonical types here. This graph defines the structure of your exported knowledge graph.",
   },
   {
     view: "proposals",
     label: "Proposals",
     icon: <Inbox size={16} />,
     group: "main",
+    tip: "Review connection proposals generated from your sources. The analysis engine detects foreign keys, column-name patterns, and shared sample values to suggest relationships between entities. Accept, modify, or reject each proposal.",
   },
   {
     view: "identity",
     label: "Identity",
     icon: <Link size={16} />,
     group: "main",
+    tip: "Configure how records from different sources that represent the same real-world entity are linked. Set URI minting strategies (how stable identifiers are generated) and conflict policies (what to do when sources disagree on a value).",
   },
   {
     view: "export",
     label: "Export",
     icon: <FileOutput size={16} />,
     group: "main",
+    tip: "Validate the graph and export it as RDF/Turtle, JSON-LD, GraphML, or Mermaid. Choose schema-only (OWL classes and properties) or a full export that streams all instance data lazily from your sources.",
   },
   {
     view: "settings",
     label: "Settings",
     icon: <Settings size={16} />,
     group: "bottom",
+    tip: "Configure API keys, embedding mode, and other app-level settings.",
   },
 ];
 
@@ -123,17 +131,24 @@ interface NavButtonProps {
 
 function NavButton({ item, isActive, onClick }: NavButtonProps) {
   return (
-    <button
-      onClick={onClick}
-      className={cn(
-        "flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-sm transition-colors",
-        isActive
-          ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
-          : "text-sidebar-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
-      )}
-    >
-      <span className="shrink-0 opacity-70">{item.icon}</span>
-      {item.label}
-    </button>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          onClick={onClick}
+          className={cn(
+            "flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-sm transition-colors",
+            isActive
+              ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+              : "text-sidebar-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
+          )}
+        >
+          <span className="shrink-0 opacity-70">{item.icon}</span>
+          {item.label}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="right">
+        <p className="max-w-[240px]">{item.tip}</p>
+      </TooltipContent>
+    </Tooltip>
   );
 }

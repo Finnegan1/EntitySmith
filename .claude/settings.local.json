@@ -39,7 +39,9 @@
       "mcp___hypothesi_tauri-mcp-server__webview_find_element",
       "mcp___hypothesi_tauri-mcp-server__webview_execute_js",
       "mcp___hypothesi_tauri-mcp-server__read_logs",
-      "mcp___hypothesi_tauri-mcp-server__ipc_execute_command"
+      "mcp___hypothesi_tauri-mcp-server__ipc_execute_command",
+      "Bash(cargo build:*)",
+      "mcp__shadcn__get_add_command_for_items"
     ]
   }
 }

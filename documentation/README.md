@@ -14,6 +14,7 @@ Each file covers a specific area; entries explain not just *what* was built but 
 | [phase-3-profiling.md](./phase-3-profiling.md) | Source profiling engine, three adapters, Migration 3, ProfilePanel |
 | [phase-4-jobs.md](./phase-4-jobs.md) | Job system, async profile_source, job:update / profile:updated events, JobsIndicator |
 | [phase-5-proposals.md](./phase-5-proposals.md) | Stage 3 candidate graph generation: FK detection, soft FK, cross-source name/value heuristics, ProposalsView |
+| [phase-6-schema-graph.md](./phase-6-schema-graph.md) | Schema graph core: entity types, relationships, source bindings, ReactFlow canvas, Entity Catalog, promote_proposal |
 | [tooling.md](./tooling.md) | shadcn + Tailwind v4 setup, path aliases, Vite/Tauri integration |
 
 ## Electron prototype reference

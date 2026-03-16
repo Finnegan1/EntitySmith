@@ -214,6 +214,37 @@ export type ConflictPolicy =
   | "prefer_most_recent"
   | "keep_both";
 
+// ── Schema Graph (Phase 5 additions) ─────────────────────────────────────────
+
+export interface EntitySourceBinding {
+  id: EntityId;
+  entityTypeId: EntityId;
+  sourceId: EntityId;
+  entityName: string;
+  createdAt: string;
+}
+
+export interface EntityTypeWithBindings {
+  entityType: EntityType;
+  bindings: EntitySourceBinding[];
+}
+
+export interface SchemaGraph {
+  entityTypes: EntityTypeWithBindings[];
+  relationships: Relationship[];
+}
+
+export interface SourceEntitySummary {
+  sourceId: EntityId;
+  sourceName: string;
+  entityName: string;
+  rowCount: number;
+  proposalCount: number;
+  maxSimilarity: number;
+  boundEntityTypeId?: EntityId;
+  boundEntityTypeName?: string;
+}
+
 // ── View / Navigation ─────────────────────────────────────────────────────────
 
 export type AppView =

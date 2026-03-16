@@ -1,0 +1,102 @@
+{
+  "dataset": "warehouse_shipments",
+  "generatedAt": "2025-03-16T08:30:00Z",
+  "records": [
+    {
+      "shipment_id": "SHIP-7001",
+      "sales_order_id": "ORD-5001",
+      "customer_ref": "CUST-1001",
+      "sku": "AERO-SEN-01",
+      "warehouse_code": "SEA-01",
+      "carrier": "DHL Express",
+      "tracking_number": "DHL-9901001",
+      "ship_date": "2025-01-10",
+      "delivered_date": "2025-01-12",
+      "shipment_status": "delivered"
+    },
+    {
+      "shipment_id": "SHIP-7002",
+      "sales_order_id": "ORD-5001",
+      "customer_ref": "CUST-1001",
+      "sku": "GRID-GW-02",
+      "warehouse_code": "SEA-01",
+      "carrier": "DHL Express",
+      "tracking_number": "DHL-9901002",
+      "ship_date": "2025-01-10",
+      "delivered_date": "2025-01-12",
+      "shipment_status": "delivered"
+    },
+    {
+      "shipment_id": "SHIP-7003",
+      "sales_order_id": "ORD-5002",
+      "customer_ref": "CUST-1002",
+      "sku": "GRID-GW-02",
+      "warehouse_code": "FRA-02",
+      "carrier": "UPS",
+      "tracking_number": "UPS-2200451",
+      "ship_date": "2025-01-14",
+      "delivered_date": "2025-01-17",
+      "shipment_status": "delivered"
+    },
+    {
+      "shipment_id": "SHIP-7004",
+      "sales_order_id": "ORD-5004",
+      "customer_ref": "CUST-1004",
+      "sku": "RETL-POS-09",
+      "warehouse_code": "SIN-01",
+      "carrier": "SF Express",
+      "tracking_number": "SFX-771901",
+      "ship_date": "2025-01-26",
+      "delivered_date": "2025-01-28",
+      "shipment_status": "delivered"
+    },
+    {
+      "shipment_id": "SHIP-7005",
+      "sales_order_id": "ORD-5005",
+      "customer_ref": "CUST-1005",
+      "sku": "HLTH-IOT-03",
+      "warehouse_code": "BOS-01",
+      "carrier": "FedEx",
+      "tracking_number": "FDX-8842201",
+      "ship_date": "2025-02-05",
+      "delivered_date": "2025-02-07",
+      "shipment_status": "delivered"
+    },
+    {
+      "shipment_id": "SHIP-7006",
+      "sales_order_id": "ORD-5007",
+      "customer_ref": "CUST-1006",
+      "sku": "FOOD-COLD-11",
+      "warehouse_code": "LHR-01",
+      "carrier": "Royal Mail",
+      "tracking_number": "RM-5400192",
+      "ship_date": null,
+      "delivered_date": null,
+      "shipment_status": "queued"
+    },
+    {
+      "shipment_id": "SHIP-7007",
+      "sales_order_id": "ORD-5008",
+      "customer_ref": "CUST-1007",
+      "sku": "CONS-ANL-01",
+      "warehouse_code": "SAO-01",
+      "carrier": "Jadlog",
+      "tracking_number": "JDL-90177",
+      "ship_date": "2025-03-12",
+      "delivered_date": "2025-03-13",
+      "shipment_status": "delivered"
+    },
+    {
+      "shipment_id": "SHIP-7008",
+      "sales_order_id": "ORD-5010",
+      "customer_ref": "CUST-1011",
+      "sku": "GRID-GW-02",
+      "warehouse_code": "AMS-01",
+      "carrier": "DHL Express",
+      "tracking_number": "DHL-9901010",
+      "ship_date": "2025-03-14",
+      "delivered_date": null,
+      "shipment_status": "in_transit"
+    }
+  ]
+}

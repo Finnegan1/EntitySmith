@@ -1,65 +1,46 @@
-# Knowledge Graph Test Data Set
+# EntitySmith Test Data
 
-This folder contains test data for the EntitySmith knowledge graph application.
+This fixture set is designed for the current EntitySmith app, not the old Electron prototype.
+It gives you realistic structured sources that exercise:
 
-## Structure
+- declared foreign keys from a SQLite operational database
+- cross-source proposal generation from shared IDs, emails, SKUs, and order references
+- nullable fields, mixed value distributions, and repeated categories for profiling
+- source entities that should eventually consolidate into canonical graph types like Customer, Product, Order, Shipment, Lead, and Refund
 
-```
-testData/
-├── structured/          # Structured data sources
-│   ├── csv/             # CSV files
-│   ├── json/            # JSON files  
-│   ├── sqlite/          # SQLite databases
-│   └── mixed/           # Mixed format data
-├── unstructured/        # Unstructured data sources
-│   ├── markdown/        # Markdown documents
-│   ├── pdf/             # PDF documents
-│   └── web/             # Web content (URLs and HTML)
-├── expected_output/     # Expected RDF/Turtle outputs
-└── README.md            # This file
-```
+## Recommended import set
 
-## Test Data Overview
+1. `commerce_core.db`
+2. `crm_contacts.csv`
+3. `warehouse_shipments.json`
+4. `marketing_leads.json`
+5. `refund_cases.csv`
 
-### Structured Data
+## What each source is for
 
-1. **CSV Files**: Customer, product, and order data in CSV format
-2. **JSON Files**: User profiles and product catalogs in JSON format  
-3. **SQLite Databases**: Sample databases with related tables
-4. **Mixed Format**: Same conceptual data in different formats for cross-source testing
+- `commerce_core.db`: transactional source of truth with declared FKs between customers, orders, order_items, products, and support_tickets
+- `crm_contacts.csv`: sales CRM contacts that overlap with customers through `linked_customer_id` and email
+- `warehouse_shipments.json`: fulfillment records linking to orders, customers, and products via `sales_order_id`, `customer_ref`, and `sku`
+- `marketing_leads.json`: top-of-funnel leads with some converted customers and product interest signals
+- `refund_cases.csv`: finance and support style dataset referencing orders and customers
 
-### Unstructured Data
+## Expected proposal hotspots
 
-1. **Markdown**: Documentation, meeting notes, and technical specs
-2. **PDF**: Sample PDF documents with entity information
-3. **Web**: HTML content and URLs for web scraping
+- `orders.customer_id` -> `customers.customer_id`
+- `order_items.order_id` -> `orders.order_id`
+- `order_items.product_id` -> `products.product_id`
+- `support_tickets.customer_id` -> `customers.customer_id`
+- `support_tickets.order_id` -> `orders.order_id`
+- `crm_contacts.linked_customer_id` -> `customers.customer_id`
+- `warehouse_shipments.sales_order_id` -> `orders.order_id`
+- `warehouse_shipments.customer_ref` -> `customers.customer_id`
+- `warehouse_shipments.sku` -> `products.sku`
+- `marketing_leads.converted_customer_id` -> `customers.customer_id`
+- `marketing_leads.interest_sku` -> `products.sku`
+- `refund_cases.order_id` -> `orders.order_id`
+- `refund_cases.customer_id` -> `customers.customer_id`
 
-### Expected Output
+## Notes
 
-Pre-generated RDF/Turtle files showing expected knowledge graph output for validation.
-
-## Usage
-
-Use this test data to:
-- Test source registration and profiling
-- Validate connection proposal generation
-- Test entity consolidation and merging
-- Verify RDF export functionality
-- Test unstructured data enrichment
-- Validate cross-source matching algorithms
-
-## Data Relationships
-
-The test data is designed with intentional relationships:
-- `users.csv` and `customers.json` represent the same entities (for merge testing)
-- `orders.csv` contains foreign keys to both user formats
-- `products.sqlite` has product data that appears in order line items
-- Unstructured data contains references to entities in structured data
-
-## Data Quality Issues
-
-The test data includes intentional quality issues for testing:
-- Duplicate records in `users_with_duplicates.csv`
-- Missing values in various fields
-- Inconsistent formatting (dates, names)
-- Potential merge conflicts between sources
+- The JSON files use root-object envelope formats on purpose so you can test EntitySmith's JSON envelope parsing.
+- Some rows are incomplete or messy by design: null phone numbers, unresolved tickets, unconverted leads, partial refunds, and inconsistent naming between systems.

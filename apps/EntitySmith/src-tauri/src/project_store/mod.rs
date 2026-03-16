@@ -5,10 +5,12 @@ use rusqlite::{Connection, OptionalExtension, params};
 use uuid::Uuid;
 
 use crate::domain::{
+    EntitySourceBinding, EntityType, EntityTypeWithBindings,
     EntityWithAttributes, FkCandidate, FullSourceProfile, ProjectState, Proposal,
     ProposalKind, ProposalStatus, ProposalOrigin,
+    Relationship, SchemaGraph,
     SourceAttributeProfile, SourceDescriptor, SourceEntityProfile,
-    SourceKind, SourceProfileSummary, TopValue,
+    SourceEntitySummary, SourceKind, SourceProfileSummary, TopValue,
 };
 use crate::adapters::AdapterProfileResult;
 
@@ -128,7 +130,40 @@ CREATE INDEX IF NOT EXISTS proposals_project_id ON proposals(project_id);
 CREATE INDEX IF NOT EXISTS proposals_status ON proposals(status);
 ";
 
-const CURRENT_SCHEMA_VERSION: u32 = 4;
+const SCHEMA_V5: &str = "
+CREATE TABLE IF NOT EXISTS entity_types (
+    id          TEXT PRIMARY KEY NOT NULL,
+    project_id  TEXT NOT NULL REFERENCES project(id) ON DELETE CASCADE,
+    name        TEXT NOT NULL,
+    label       TEXT,
+    description TEXT,
+    created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS entity_types_project_id ON entity_types(project_id);
+CREATE UNIQUE INDEX IF NOT EXISTS entity_types_name ON entity_types(project_id, name);
+
+CREATE TABLE IF NOT EXISTS entity_source_bindings (
+    id               TEXT PRIMARY KEY NOT NULL,
+    entity_type_id   TEXT NOT NULL REFERENCES entity_types(id) ON DELETE CASCADE,
+    source_id        TEXT NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+    entity_name      TEXT NOT NULL,
+    created_at       TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS entity_source_bindings_unique ON entity_source_bindings(entity_type_id, source_id, entity_name);
+
+CREATE TABLE IF NOT EXISTS relationships (
+    id                     TEXT PRIMARY KEY NOT NULL,
+    project_id             TEXT NOT NULL REFERENCES project(id) ON DELETE CASCADE,
+    source_entity_type_id  TEXT NOT NULL REFERENCES entity_types(id) ON DELETE CASCADE,
+    target_entity_type_id  TEXT NOT NULL REFERENCES entity_types(id) ON DELETE CASCADE,
+    predicate              TEXT NOT NULL,
+    cardinality            TEXT,
+    created_at             TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS relationships_project_id ON relationships(project_id);
+";
+
+const CURRENT_SCHEMA_VERSION: u32 = 5;
 
 // ── ProjectStore ──────────────────────────────────────────────────────────────
 
@@ -857,6 +892,338 @@ impl ProjectStore {
             .ok_or_else(|| format!("Proposal '{proposal_id}' disappeared after update."))
     }
 
+    // ── Schema Graph CRUD ─────────────────────────────────────────────────────
+
+    /// Create a new canonical entity type for the current project.
+    pub fn create_entity_type(
+        &self,
+        name: &str,
+        label: Option<&str>,
+        description: Option<&str>,
+    ) -> Result<EntityType, String> {
+        let id = Uuid::new_v4().to_string();
+        let now = Utc::now().to_rfc3339();
+        let project_id = self.get_project_state()?.id;
+
+        self.conn
+            .execute(
+                "INSERT INTO entity_types (id, project_id, name, label, description, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![id, project_id, name, label, description, now],
+            )
+            .map_err(|e| format!("Failed to insert entity type: {e}"))?;
+
+        Ok(EntityType {
+            id,
+            project_id,
+            name: name.to_string(),
+            label: label.map(|s| s.to_string()),
+            description: description.map(|s| s.to_string()),
+            created_at: now,
+        })
+    }
+
+    /// Delete a canonical entity type by ID (cascades to bindings and relationships).
+    pub fn delete_entity_type(&self, id: &str) -> Result<(), String> {
+        let affected = self.conn
+            .execute("DELETE FROM entity_types WHERE id = ?1", params![id])
+            .map_err(|e| format!("Failed to delete entity type: {e}"))?;
+
+        if affected == 0 {
+            return Err(format!("Entity type '{id}' not found."));
+        }
+        Ok(())
+    }
+
+    /// Return all entity types for the current project.
+    pub fn list_entity_types(&self) -> Result<Vec<EntityType>, String> {
+        let project_id = self.get_project_state()?.id;
+
+        let mut stmt = self.conn
+            .prepare(
+                "SELECT id, project_id, name, label, description, created_at
+                 FROM entity_types WHERE project_id = ?1 ORDER BY name ASC",
+            )
+            .map_err(|e| format!("Failed to prepare entity_types query: {e}"))?;
+
+        let rows: Vec<EntityType> = stmt
+            .query_map(params![project_id], |row| {
+                Ok(EntityType {
+                    id: row.get(0)?,
+                    project_id: row.get(1)?,
+                    name: row.get(2)?,
+                    label: row.get(3)?,
+                    description: row.get(4)?,
+                    created_at: row.get(5)?,
+                })
+            })
+            .map_err(|e| format!("Failed to query entity_types: {e}"))?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        Ok(rows)
+    }
+
+    /// Add a relationship between two entity types.
+    pub fn add_relationship(
+        &self,
+        source_entity_type_id: &str,
+        target_entity_type_id: &str,
+        predicate: &str,
+        cardinality: Option<&str>,
+    ) -> Result<Relationship, String> {
+        let id = Uuid::new_v4().to_string();
+        let now = Utc::now().to_rfc3339();
+        let project_id = self.get_project_state()?.id;
+
+        self.conn
+            .execute(
+                "INSERT INTO relationships
+                 (id, project_id, source_entity_type_id, target_entity_type_id,
+                  predicate, cardinality, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                params![
+                    id, project_id,
+                    source_entity_type_id, target_entity_type_id,
+                    predicate, cardinality, now
+                ],
+            )
+            .map_err(|e| format!("Failed to insert relationship: {e}"))?;
+
+        Ok(Relationship {
+            id,
+            project_id,
+            source_entity_type_id: source_entity_type_id.to_string(),
+            target_entity_type_id: target_entity_type_id.to_string(),
+            predicate: predicate.to_string(),
+            cardinality: cardinality.map(|s| s.to_string()),
+            created_at: now,
+        })
+    }
+
+    /// Delete a relationship by ID.
+    pub fn delete_relationship(&self, id: &str) -> Result<(), String> {
+        let affected = self.conn
+            .execute("DELETE FROM relationships WHERE id = ?1", params![id])
+            .map_err(|e| format!("Failed to delete relationship: {e}"))?;
+
+        if affected == 0 {
+            return Err(format!("Relationship '{id}' not found."));
+        }
+        Ok(())
+    }
+
+    /// Return all relationships for the current project.
+    pub fn list_relationships(&self) -> Result<Vec<Relationship>, String> {
+        let project_id = self.get_project_state()?.id;
+
+        let mut stmt = self.conn
+            .prepare(
+                "SELECT id, project_id, source_entity_type_id, target_entity_type_id,
+                        predicate, cardinality, created_at
+                 FROM relationships WHERE project_id = ?1 ORDER BY created_at ASC",
+            )
+            .map_err(|e| format!("Failed to prepare relationships query: {e}"))?;
+
+        let rows: Vec<Relationship> = stmt
+            .query_map(params![project_id], |row| {
+                Ok(Relationship {
+                    id: row.get(0)?,
+                    project_id: row.get(1)?,
+                    source_entity_type_id: row.get(2)?,
+                    target_entity_type_id: row.get(3)?,
+                    predicate: row.get(4)?,
+                    cardinality: row.get(5)?,
+                    created_at: row.get(6)?,
+                })
+            })
+            .map_err(|e| format!("Failed to query relationships: {e}"))?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        Ok(rows)
+    }
+
+    /// Bind a source-local entity to a canonical entity type.
+    pub fn bind_source_entity(
+        &self,
+        entity_type_id: &str,
+        source_id: &str,
+        entity_name: &str,
+    ) -> Result<EntitySourceBinding, String> {
+        let id = Uuid::new_v4().to_string();
+        let now = Utc::now().to_rfc3339();
+
+        self.conn
+            .execute(
+                "INSERT OR IGNORE INTO entity_source_bindings
+                 (id, entity_type_id, source_id, entity_name, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![id, entity_type_id, source_id, entity_name, now],
+            )
+            .map_err(|e| format!("Failed to insert entity source binding: {e}"))?;
+
+        // Fetch the actual row (may have pre-existed due to OR IGNORE).
+        self.conn
+            .query_row(
+                "SELECT id, entity_type_id, source_id, entity_name, created_at
+                 FROM entity_source_bindings
+                 WHERE entity_type_id = ?1 AND source_id = ?2 AND entity_name = ?3",
+                params![entity_type_id, source_id, entity_name],
+                |row| {
+                    Ok(EntitySourceBinding {
+                        id: row.get(0)?,
+                        entity_type_id: row.get(1)?,
+                        source_id: row.get(2)?,
+                        entity_name: row.get(3)?,
+                        created_at: row.get(4)?,
+                    })
+                },
+            )
+            .map_err(|e| format!("Failed to read entity source binding: {e}"))
+    }
+
+    /// Remove a binding between a source-local entity and a canonical entity type.
+    pub fn unbind_source_entity(
+        &self,
+        entity_type_id: &str,
+        source_id: &str,
+        entity_name: &str,
+    ) -> Result<(), String> {
+        let affected = self.conn
+            .execute(
+                "DELETE FROM entity_source_bindings
+                 WHERE entity_type_id = ?1 AND source_id = ?2 AND entity_name = ?3",
+                params![entity_type_id, source_id, entity_name],
+            )
+            .map_err(|e| format!("Failed to delete entity source binding: {e}"))?;
+
+        if affected == 0 {
+            return Err(format!(
+                "Binding for entity type '{entity_type_id}', source '{source_id}', \
+                 entity '{entity_name}' not found."
+            ));
+        }
+        Ok(())
+    }
+
+    /// Return the full schema graph (entity types + bindings + relationships)
+    /// for the current project.
+    pub fn get_schema_graph(&self) -> Result<SchemaGraph, String> {
+        let project_id = self.get_project_state()?.id;
+
+        // Load entity types.
+        let entity_types = self.list_entity_types()?;
+
+        // Load all bindings for this project in one query.
+        let mut stmt = self.conn
+            .prepare(
+                "SELECT esb.id, esb.entity_type_id, esb.source_id, esb.entity_name, esb.created_at
+                 FROM entity_source_bindings esb
+                 JOIN entity_types et ON et.id = esb.entity_type_id
+                 WHERE et.project_id = ?1",
+            )
+            .map_err(|e| format!("Failed to prepare bindings query: {e}"))?;
+
+        let all_bindings: Vec<EntitySourceBinding> = stmt
+            .query_map(params![project_id], |row| {
+                Ok(EntitySourceBinding {
+                    id: row.get(0)?,
+                    entity_type_id: row.get(1)?,
+                    source_id: row.get(2)?,
+                    entity_name: row.get(3)?,
+                    created_at: row.get(4)?,
+                })
+            })
+            .map_err(|e| format!("Failed to query bindings: {e}"))?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        // Associate bindings with their entity types.
+        let entity_types_with_bindings: Vec<EntityTypeWithBindings> = entity_types
+            .into_iter()
+            .map(|et| {
+                let bindings: Vec<EntitySourceBinding> = all_bindings
+                    .iter()
+                    .filter(|b| b.entity_type_id == et.id)
+                    .cloned()
+                    .collect();
+                EntityTypeWithBindings {
+                    entity_type: et,
+                    bindings,
+                }
+            })
+            .collect();
+
+        let relationships = self.list_relationships()?;
+
+        Ok(SchemaGraph {
+            entity_types: entity_types_with_bindings,
+            relationships,
+        })
+    }
+
+    /// Return a summary row per source-local entity, enriched with proposal stats
+    /// and any existing binding to a canonical entity type.
+    pub fn list_source_entities_summary(&self) -> Result<Vec<SourceEntitySummary>, String> {
+        let project_id = self.get_project_state()?.id;
+
+        let mut stmt = self.conn
+            .prepare(
+                "SELECT
+                    s.id as source_id,
+                    s.name as source_name,
+                    se.name as entity_name,
+                    se.row_count,
+                    COALESCE(p_count.cnt, 0) as proposal_count,
+                    COALESCE(p_count.max_conf, 0.0) as max_similarity,
+                    esb.entity_type_id as bound_entity_type_id,
+                    et.name as bound_entity_type_name
+                FROM source_entities se
+                JOIN sources s ON se.source_id = s.id
+                LEFT JOIN entity_source_bindings esb
+                    ON esb.source_id = se.source_id AND esb.entity_name = se.name
+                LEFT JOIN entity_types et ON et.id = esb.entity_type_id
+                LEFT JOIN (
+                    SELECT src_id, ent_name,
+                           SUM(cnt) as cnt, MAX(max_conf) as max_conf
+                    FROM (
+                        SELECT from_source_id as src_id, from_entity as ent_name,
+                               COUNT(*) as cnt, MAX(confidence) as max_conf
+                        FROM proposals WHERE project_id = ?1 AND status != 'rejected'
+                        GROUP BY from_source_id, from_entity
+                        UNION ALL
+                        SELECT to_source_id, to_entity, COUNT(*), MAX(confidence)
+                        FROM proposals WHERE project_id = ?1 AND status != 'rejected'
+                        GROUP BY to_source_id, to_entity
+                    )
+                    GROUP BY src_id, ent_name
+                ) p_count ON p_count.src_id = se.source_id AND p_count.ent_name = se.name
+                WHERE s.project_id = ?1
+                ORDER BY s.name ASC, se.name ASC",
+            )
+            .map_err(|e| format!("Failed to prepare source_entities_summary query: {e}"))?;
+
+        let rows: Vec<SourceEntitySummary> = stmt
+            .query_map(params![project_id], |row| {
+                Ok(SourceEntitySummary {
+                    source_id: row.get(0)?,
+                    source_name: row.get(1)?,
+                    entity_name: row.get(2)?,
+                    row_count: row.get(3)?,
+                    proposal_count: row.get(4)?,
+                    max_similarity: row.get(5)?,
+                    bound_entity_type_id: row.get(6)?,
+                    bound_entity_type_name: row.get(7)?,
+                })
+            })
+            .map_err(|e| format!("Failed to query source_entities_summary: {e}"))?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        Ok(rows)
+    }
+
     /// Fetch a single source by ID.
     fn get_source(&self, source_id: &str) -> Result<SourceDescriptor, String> {
         self.conn
@@ -955,6 +1322,16 @@ fn apply_migrations(conn: &Connection) -> Result<(), String> {
             .map_err(|e| format!("Migration 4 failed: {e}"))?;
         conn.execute(
             "UPDATE _meta SET value = '4' WHERE key = 'schema_version'",
+            [],
+        )
+        .map_err(|e| format!("Failed to update schema version: {e}"))?;
+    }
+
+    if version < 5 {
+        conn.execute_batch(SCHEMA_V5)
+            .map_err(|e| format!("Migration 5 failed: {e}"))?;
+        conn.execute(
+            "UPDATE _meta SET value = '5' WHERE key = 'schema_version'",
             [],
         )
         .map_err(|e| format!("Failed to update schema version: {e}"))?;

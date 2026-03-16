@@ -82,15 +82,34 @@ export function useProposals(
       reviewedCardinality?: string,
     ) => {
       try {
-        const updated = await invoke<Proposal>("review_proposal", {
-          proposalId,
-          action,
-          reviewedPredicate: reviewedPredicate ?? null,
-          reviewedCardinality: reviewedCardinality ?? null,
-        });
-        setProposals((prev) =>
-          prev.map((p) => (p.id === updated.id ? updated : p)),
-        );
+        if (action === "reject") {
+          // Rejection only changes proposal status — no schema graph objects created.
+          const updated = await invoke<Proposal>("review_proposal", {
+            proposalId,
+            action,
+            reviewedPredicate: null,
+            reviewedCardinality: null,
+          });
+          setProposals((prev) =>
+            prev.map((p) => (p.id === updated.id ? updated : p)),
+          );
+        } else if (action === "modify") {
+          // Save custom predicate/cardinality first, then promote into the graph.
+          // promote_proposal reads the reviewed values from the DB, so the order matters.
+          await invoke<Proposal>("review_proposal", {
+            proposalId,
+            action,
+            reviewedPredicate: reviewedPredicate ?? null,
+            reviewedCardinality: reviewedCardinality ?? null,
+          });
+          await invoke<void>("promote_proposal", { proposalId });
+          // promote_proposal emits proposals:updated → reload handled by the listener
+        } else {
+          // "accept" → promote directly. promote_proposal internally marks the proposal
+          // as accepted and creates the entity types + relationship in the schema graph.
+          await invoke<void>("promote_proposal", { proposalId });
+          // promote_proposal emits proposals:updated → reload handled by the listener
+        }
       } catch (e) {
         setError(String(e));
       }

@@ -1,0 +1,11 @@
+crm_contact_id,account_name,contact_name,work_email,mobile_phone,lifecycle_stage,owner_region,linked_customer_id,preferred_language,last_activity_at
+CRM-204,Alder Aerospace,Maya Patel,maya.patel@alderaerospace.com,+1-206-555-0142,customer,NA,CUST-1001,en,2025-03-10T17:32:00Z
+CRM-205,NorthGrid,Jonas Meyer,jonas.meyer@northgrid.io,+49-30-555-0199,customer,EMEA,CUST-1002,de,2025-03-08T09:14:00Z
+CRM-206,Solis Logistics,Elena Rossi,elena.rossi@solis-logistics.eu,,customer,EMEA,CUST-1003,it,2025-02-17T12:01:00Z
+CRM-207,Nova Retail,Naomi Chen,naomi.chen@novaretail.sg,+65-6400-8821,customer,APAC,CUST-1004,en,2025-03-04T05:56:00Z
+CRM-208,Ridge Health,Daniel Brooks,daniel.brooks@ridgehealth.org,+1-617-555-0107,customer,NA,CUST-1005,en,2025-03-01T15:22:00Z
+CRM-209,Lumen Foods,Priya Nair,priya.nair@lumenfoods.co.uk,+44-20-5550-1103,opportunity,EMEA,CUST-1006,en,2025-03-12T14:40:00Z
+CRM-210,Verde Energia,Lucas Ferreira,lucas.ferreira@verdeenergia.com.br,,customer,LATAM,CUST-1007,pt-BR,2025-03-11T18:08:00Z
+CRM-211,Indigo Advisors,Amelia Hart,amelia.hart@indigoadvisors.com,+1-415-555-0136,opportunity,NA,CUST-1008,en,2025-03-15T09:25:00Z
+CRM-212,Polar Transit,Greta Olsen,greta.olsen@polartransit.no,+47-22-555-0121,lead,EMEA,,no,2025-03-07T11:18:00Z
+CRM-213,Cascade Bio,Tom Alvarez,tom.alvarez@cascadebio.ai,+1-503-555-0112,marketing_qualified,NA,,en,2025-03-14T16:05:00Z
