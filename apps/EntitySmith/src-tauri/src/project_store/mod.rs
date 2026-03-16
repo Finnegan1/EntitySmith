@@ -7,7 +7,7 @@ use uuid::Uuid;
 use crate::domain::{
     EntitySourceBinding, EntityType, EntityTypeWithBindings,
     EntityWithAttributes, FkCandidate, FullSourceProfile, ProjectState, Proposal,
-    ProposalKind, ProposalStatus, ProposalOrigin,
+    ProposalKind, ProposalReason, ProposalStatus, ProposalOrigin,
     Relationship, SchemaGraph,
     SourceAttributeProfile, SourceDescriptor, SourceEntityProfile,
     SourceEntitySummary, SourceKind, SourceProfileSummary, TopValue,
@@ -163,7 +163,62 @@ CREATE TABLE IF NOT EXISTS relationships (
 CREATE INDEX IF NOT EXISTS relationships_project_id ON relationships(project_id);
 ";
 
-const CURRENT_SCHEMA_VERSION: u32 = 5;
+const SCHEMA_V6: &str = "
+-- Refactor: proposals no longer store kind/origin/evidence directly.
+-- Each detection method becomes a 'reason' row with its own kind/origin/confidence/evidence.
+
+CREATE TABLE IF NOT EXISTS proposal_reasons (
+    id           TEXT PRIMARY KEY NOT NULL,
+    proposal_id  TEXT NOT NULL REFERENCES proposals(id) ON DELETE CASCADE,
+    kind         TEXT NOT NULL,
+    origin       TEXT NOT NULL,
+    confidence   REAL NOT NULL,
+    evidence     TEXT NOT NULL DEFAULT '{}',
+    created_at   TEXT NOT NULL,
+    UNIQUE(proposal_id, kind)
+);
+CREATE INDEX IF NOT EXISTS proposal_reasons_proposal_id ON proposal_reasons(proposal_id);
+
+-- Migrate existing proposal rows into reasons.
+-- Use proposal.id || '-r' as a deterministic, unique reason id.
+INSERT OR IGNORE INTO proposal_reasons (id, proposal_id, kind, origin, confidence, evidence, created_at)
+SELECT id || '-r', id, kind, origin, confidence, evidence, created_at FROM proposals;
+
+-- Recreate the proposals table without the now-redundant kind/origin/evidence columns.
+DROP TABLE IF EXISTS proposals_new;
+CREATE TABLE proposals_new (
+    id                    TEXT PRIMARY KEY NOT NULL,
+    project_id            TEXT NOT NULL REFERENCES project(id) ON DELETE CASCADE,
+    status                TEXT NOT NULL DEFAULT 'pending',
+    confidence            REAL NOT NULL,
+    from_source_id        TEXT NOT NULL,
+    from_entity           TEXT NOT NULL,
+    from_column           TEXT NOT NULL,
+    to_source_id          TEXT NOT NULL,
+    to_entity             TEXT NOT NULL,
+    to_column             TEXT NOT NULL,
+    suggested_predicate   TEXT NOT NULL,
+    suggested_cardinality TEXT NOT NULL DEFAULT 'unknown',
+    reviewed_predicate    TEXT,
+    reviewed_cardinality  TEXT,
+    created_at            TEXT NOT NULL,
+    updated_at            TEXT NOT NULL
+);
+INSERT INTO proposals_new
+    SELECT id, project_id, status, confidence,
+           from_source_id, from_entity, from_column,
+           to_source_id, to_entity, to_column,
+           suggested_predicate, suggested_cardinality,
+           reviewed_predicate, reviewed_cardinality,
+           created_at, updated_at
+    FROM proposals;
+DROP TABLE proposals;
+ALTER TABLE proposals_new RENAME TO proposals;
+CREATE INDEX IF NOT EXISTS proposals_project_id ON proposals(project_id);
+CREATE INDEX IF NOT EXISTS proposals_status ON proposals(status);
+";
+
+const CURRENT_SCHEMA_VERSION: u32 = 6;
 
 // ── ProjectStore ──────────────────────────────────────────────────────────────
 
@@ -678,13 +733,16 @@ impl ProjectStore {
 
     // ── Proposal CRUD ─────────────────────────────────────────────────────────
 
-    /// Replace all pending proposals with the newly generated set.
-    /// Accepted and rejected proposals are preserved.
+    /// Persist a freshly generated set of proposals.
+    ///
+    /// Pending proposals are deleted and re-inserted on every run.
+    /// Accepted / rejected proposals are preserved; their reasons are enriched
+    /// with any newly detected methods via `INSERT OR IGNORE`.
     pub fn save_proposals(&self, proposals: &[Proposal]) -> Result<(), String> {
         let project_id = self.get_project_state()?.id;
         let now = Utc::now().to_rfc3339();
 
-        // Only delete pending proposals — preserve accepted/rejected decisions.
+        // Delete pending proposals — CASCADE removes their reason rows too.
         self.conn
             .execute(
                 "DELETE FROM proposals WHERE project_id = ?1 AND status = 'pending'",
@@ -693,29 +751,21 @@ impl ProjectStore {
             .map_err(|e| format!("Failed to delete pending proposals: {e}"))?;
 
         for p in proposals {
-            let kind_str = p.kind.to_db_str();
-            let status_str = p.status.to_db_str();
-            let origin_str = p.origin.to_db_str();
-            let evidence_str = serde_json::to_string(&p.evidence)
-                .unwrap_or_else(|_| "{}".to_string());
-
+            // Insert proposal (OR IGNORE keeps accepted/rejected rows intact).
             self.conn
                 .execute(
                     "INSERT OR IGNORE INTO proposals
-                     (id, project_id, kind, status, confidence, origin,
+                     (id, project_id, status, confidence,
                       from_source_id, from_entity, from_column,
                       to_source_id, to_entity, to_column,
                       suggested_predicate, suggested_cardinality,
                       reviewed_predicate, reviewed_cardinality,
-                      evidence, created_at, updated_at)
-                     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19)",
+                      created_at, updated_at)
+                     VALUES (?1,?2,'pending',?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)",
                     params![
                         p.id,
                         project_id,
-                        kind_str,
-                        status_str,
                         p.confidence,
-                        origin_str,
                         p.from_source_id,
                         p.from_entity,
                         p.from_column,
@@ -726,18 +776,48 @@ impl ProjectStore {
                         p.suggested_cardinality,
                         p.reviewed_predicate,
                         p.reviewed_cardinality,
-                        evidence_str,
                         now,
                         now
                     ],
                 )
                 .map_err(|e| format!("Failed to insert proposal {}: {e}", p.id))?;
+
+            // For already-accepted/rejected proposals, refresh confidence in case
+            // new reasons were discovered.
+            self.conn
+                .execute(
+                    "UPDATE proposals SET confidence = ?1, updated_at = ?2
+                     WHERE id = ?3 AND status != 'pending'",
+                    params![p.confidence, now, p.id],
+                )
+                .map_err(|e| format!("Failed to refresh confidence for {}: {e}", p.id))?;
+
+            // Insert reasons (UNIQUE(proposal_id, kind) prevents duplicates per method).
+            for reason in &p.reasons {
+                let reason_id = Uuid::new_v4().to_string();
+                let kind_str = reason.kind.to_db_str();
+                let origin_str = reason.origin.to_db_str();
+                let evidence_str = serde_json::to_string(&reason.evidence)
+                    .unwrap_or_else(|_| "{}".to_string());
+                self.conn
+                    .execute(
+                        "INSERT OR IGNORE INTO proposal_reasons
+                         (id, proposal_id, kind, origin, confidence, evidence, created_at)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                        params![
+                            reason_id, p.id, kind_str, origin_str,
+                            reason.confidence, evidence_str, now
+                        ],
+                    )
+                    .map_err(|e| format!("Failed to insert reason for {}: {e}", p.id))?;
+            }
         }
 
         Ok(())
     }
 
     /// Return all proposals for the project, optionally filtered by status.
+    /// Each proposal is populated with its full list of reasons.
     /// Results are ordered by confidence descending.
     pub fn list_proposals(
         &self,
@@ -748,12 +828,12 @@ impl ProjectStore {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT id, kind, status, confidence, origin,
+                "SELECT id, status, confidence,
                         from_source_id, from_entity, from_column,
                         to_source_id, to_entity, to_column,
                         suggested_predicate, suggested_cardinality,
                         reviewed_predicate, reviewed_cardinality,
-                        evidence, created_at, updated_at
+                        created_at, updated_at
                  FROM proposals
                  WHERE project_id = ?1
                  ORDER BY confidence DESC",
@@ -761,12 +841,12 @@ impl ProjectStore {
             .map_err(|e| format!("Failed to prepare proposals query: {e}"))?;
 
         type Row = (
-            String, String, String, f64, String,
+            String, String, f64,
             String, String, String,
             String, String, String,
             String, String,
             Option<String>, Option<String>,
-            String, String, String,
+            String, String,
         );
 
         let raw: Vec<Row> = stmt
@@ -774,8 +854,8 @@ impl ProjectStore {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                    row.get::<_, f64>(3)?,
+                    row.get::<_, f64>(2)?,
+                    row.get::<_, String>(3)?,
                     row.get::<_, String>(4)?,
                     row.get::<_, String>(5)?,
                     row.get::<_, String>(6)?,
@@ -783,13 +863,10 @@ impl ProjectStore {
                     row.get::<_, String>(8)?,
                     row.get::<_, String>(9)?,
                     row.get::<_, String>(10)?,
-                    row.get::<_, String>(11)?,
-                    row.get::<_, String>(12)?,
-                    row.get::<_, Option<String>>(13)?,
-                    row.get::<_, Option<String>>(14)?,
-                    row.get::<_, String>(15)?,
-                    row.get::<_, String>(16)?,
-                    row.get::<_, String>(17)?,
+                    row.get::<_, Option<String>>(11)?,
+                    row.get::<_, Option<String>>(12)?,
+                    row.get::<_, String>(13)?,
+                    row.get::<_, String>(14)?,
                 ))
             })
             .map_err(|e| format!("Failed to query proposals: {e}"))?
@@ -799,33 +876,29 @@ impl ProjectStore {
         let mut proposals = Vec::new();
         for row in raw {
             let (
-                id, kind_str, status_str, confidence, origin_str,
+                id, status_str, confidence,
                 from_source_id, from_entity, from_column,
                 to_source_id, to_entity, to_column,
                 suggested_predicate, suggested_cardinality,
                 reviewed_predicate, reviewed_cardinality,
-                evidence_str, created_at, updated_at,
+                created_at, updated_at,
             ) = row;
 
             let status = ProposalStatus::from_db_str(&status_str);
 
-            // Apply optional status filter
             if let Some(filter) = status_filter {
                 if status.to_db_str() != filter {
                     continue;
                 }
             }
 
-            let evidence: serde_json::Value =
-                serde_json::from_str(&evidence_str).unwrap_or(serde_json::Value::Object(Default::default()));
+            let reasons = self.load_reasons_for_proposal(&id)?;
 
             proposals.push(Proposal {
                 id,
                 project_id: project_id.clone(),
-                kind: ProposalKind::from_db_str(&kind_str),
                 status,
                 confidence,
-                origin: ProposalOrigin::from_db_str(&origin_str),
                 from_source_id,
                 from_entity,
                 from_column,
@@ -836,7 +909,7 @@ impl ProjectStore {
                 suggested_cardinality,
                 reviewed_predicate,
                 reviewed_cardinality,
-                evidence,
+                reasons,
                 created_at,
                 updated_at,
             });
@@ -845,11 +918,48 @@ impl ProjectStore {
         Ok(proposals)
     }
 
-    /// Update a proposal's review status.
-    ///
-    /// `action`: "accept" | "reject" | "modify"
+    /// Load all detection reasons for a single proposal, ordered by confidence desc.
+    fn load_reasons_for_proposal(&self, proposal_id: &str) -> Result<Vec<ProposalReason>, String> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT kind, origin, confidence, evidence
+                 FROM proposal_reasons
+                 WHERE proposal_id = ?1
+                 ORDER BY confidence DESC",
+            )
+            .map_err(|e| format!("Failed to prepare reasons query: {e}"))?;
+
+        let reasons: Vec<ProposalReason> = stmt
+            .query_map(params![proposal_id], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, f64>(2)?,
+                    row.get::<_, String>(3)?,
+                ))
+            })
+            .map_err(|e| format!("Failed to query reasons: {e}"))?
+            .filter_map(|r| r.ok())
+            .map(|(kind_str, origin_str, confidence, evidence_str)| {
+                let evidence: serde_json::Value =
+                    serde_json::from_str(&evidence_str).unwrap_or_default();
+                ProposalReason {
+                    kind: ProposalKind::from_db_str(&kind_str),
+                    origin: ProposalOrigin::from_db_str(&origin_str),
+                    confidence,
+                    evidence,
+                }
+            })
+            .collect();
+
+        Ok(reasons)
+    }
+
+    /// Update a proposal's review status (accept / reject / modify).
     ///
     /// For "modify", `reviewed_predicate` and `reviewed_cardinality` must be provided.
+    /// Returns the updated proposal (with reasons populated).
     pub fn review_proposal(
         &self,
         proposal_id: &str,
@@ -885,7 +995,6 @@ impl ProjectStore {
             return Err(format!("Proposal '{proposal_id}' not found."));
         }
 
-        // Return the updated proposal.
         self.list_proposals(None)?
             .into_iter()
             .find(|p| p.id == proposal_id)
@@ -1332,6 +1441,16 @@ fn apply_migrations(conn: &Connection) -> Result<(), String> {
             .map_err(|e| format!("Migration 5 failed: {e}"))?;
         conn.execute(
             "UPDATE _meta SET value = '5' WHERE key = 'schema_version'",
+            [],
+        )
+        .map_err(|e| format!("Failed to update schema version: {e}"))?;
+    }
+
+    if version < 6 {
+        conn.execute_batch(SCHEMA_V6)
+            .map_err(|e| format!("Migration 6 failed: {e}"))?;
+        conn.execute(
+            "UPDATE _meta SET value = '6' WHERE key = 'schema_version'",
             [],
         )
         .map_err(|e| format!("Failed to update schema version: {e}"))?;

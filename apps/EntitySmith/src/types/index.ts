@@ -133,13 +133,27 @@ export type ProposalOrigin = "declared_fk" | "heuristic" | "embedding" | "llm";
 
 export type ReviewAction = "accept" | "reject" | "modify";
 
+/** One piece of evidence from a single detection method. */
+export interface ProposalReason {
+  kind: ProposalKind;
+  origin: ProposalOrigin;
+  /** Confidence contributed by this specific method (0–1). */
+  confidence: number;
+  /** Method-specific evidence blob. */
+  evidence: Record<string, unknown>;
+}
+
+/**
+ * One proposal per unique connection endpoint pair.
+ * All detection methods that fire for the same pair are stored as `reasons`.
+ * `confidence` is the combined score across all reasons.
+ */
 export interface Proposal {
   id: EntityId;
   projectId: EntityId;
-  kind: ProposalKind;
   status: ProposalStatus;
+  /** Combined confidence: 1 − Π(1 − cᵢ) across all reasons. */
   confidence: number;
-  origin: ProposalOrigin;
   // Connection endpoints
   fromSourceId: EntityId;
   fromEntity: string;
@@ -152,8 +166,8 @@ export interface Proposal {
   suggestedCardinality: string;
   reviewedPredicate?: string;
   reviewedCardinality?: string;
-  // Method-specific evidence
-  evidence: Record<string, unknown>;
+  /** All detection reasons, sorted by confidence desc. */
+  reasons: ProposalReason[];
   createdAt: string;
   updatedAt: string;
 }

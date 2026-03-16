@@ -6,7 +6,7 @@ import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ProfilePanel, ProfileLoading } from "@/features/sources/ProfilePanel";
 import { useSourceProfile } from "@/hooks/useSourceProfile";
-import type { AppView, EntityTypeWithBindings, Proposal, SourceDescriptor, SourceKind } from "@/types";
+import type { AppView, EntityTypeWithBindings, Proposal, ProposalReason, SourceDescriptor, SourceKind } from "@/types";
 
 // ── Tooltip helper ─────────────────────────────────────────────────────────────
 
@@ -223,7 +223,7 @@ function DetailRow({
 
 // ── Proposal detail ───────────────────────────────────────────────────────────
 
-const PROPOSAL_KIND_LABEL: Record<Proposal["kind"], string> = {
+const REASON_KIND_LABEL: Record<ProposalReason["kind"], string> = {
   foreign_key: "Declared FK",
   soft_foreign_key: "Soft FK",
   column_name_similarity: "Name similarity",
@@ -232,7 +232,7 @@ const PROPOSAL_KIND_LABEL: Record<Proposal["kind"], string> = {
   llm_reasoning: "LLM reasoning",
 };
 
-const PROPOSAL_KIND_TIP: Record<Proposal["kind"], string> = {
+const REASON_KIND_TIP: Record<ProposalReason["kind"], string> = {
   foreign_key:
     "A foreign key constraint explicitly declared in the source schema (e.g. REFERENCES in SQLite). Near-certain relationship — confidence 0.95.",
   soft_foreign_key:
@@ -323,18 +323,10 @@ function ProposalDetail({ proposal: p }: { proposal: Proposal }) {
 
       <DetailRow label="Confidence">
         <Tip
-          content={`How certain the engine is that this relationship exists. Declared FK: 95%, soft FK name-pattern: 70%, cross-source heuristics vary. Always verify before accepting.`}
+          content={`Combined confidence across all detection reasons: ${confidencePct}%. Formula: 1 − Π(1 − cᵢ) — multiple independent signals multiply the certainty. Always verify before accepting.`}
           side="left"
         >
           <p className="text-xs text-foreground cursor-help">{confidencePct}%</p>
-        </Tip>
-      </DetailRow>
-
-      <DetailRow label="Kind">
-        <Tip content={PROPOSAL_KIND_TIP[p.kind]} side="left">
-          <p className="text-xs text-foreground cursor-help">
-            {PROPOSAL_KIND_LABEL[p.kind]}
-          </p>
         </Tip>
       </DetailRow>
 
@@ -351,40 +343,20 @@ function ProposalDetail({ proposal: p }: { proposal: Proposal }) {
 
       <Separator className="my-3" />
 
-      <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-        Evidence
-      </p>
-      <div className="flex flex-col gap-1.5">
-        {Object.entries(p.evidence).map(([key, val]) => {
-          const tip = EVIDENCE_KEY_TIP[key];
-          const formatted =
-            typeof val === "number"
-              ? val < 1
-                ? `${(val * 100).toFixed(1)}%`
-                : val.toFixed(2)
-              : typeof val === "boolean"
-                ? val ? "yes" : "no"
-                : Array.isArray(val)
-                  ? JSON.stringify(val)
-                  : String(val);
+      {/* Detection reasons */}
+      <Tip
+        content="Each reason represents one detection method that independently found evidence for this connection. Multiple reasons increase the combined confidence via independent-evidence combination."
+        side="left"
+      >
+        <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground cursor-help">
+          Detection Reasons ({p.reasons.length})
+        </p>
+      </Tip>
 
-          return (
-            <div key={key} className="flex items-start justify-between gap-2">
-              {tip ? (
-                <Tip content={tip} side="left">
-                  <span className="text-[11px] text-muted-foreground cursor-help underline decoration-dotted underline-offset-2">
-                    {key}
-                  </span>
-                </Tip>
-              ) : (
-                <span className="text-[11px] text-muted-foreground">{key}</span>
-              )}
-              <span className="text-right font-mono text-[11px] text-foreground">
-                {formatted}
-              </span>
-            </div>
-          );
-        })}
+      <div className="flex flex-col gap-3">
+        {p.reasons.map((reason, i) => (
+          <ReasonDetail key={i} reason={reason} />
+        ))}
       </div>
 
       {(p.reviewedPredicate || p.reviewedCardinality) && (
@@ -405,6 +377,71 @@ function ProposalDetail({ proposal: p }: { proposal: Proposal }) {
           )}
         </>
       )}
+    </div>
+  );
+}
+
+function ReasonDetail({ reason }: { reason: ProposalReason }) {
+  const confidencePct = Math.round(reason.confidence * 100);
+
+  return (
+    <div className="rounded-md border border-border bg-muted/20 px-2.5 py-2">
+      {/* Reason header */}
+      <div className="mb-1.5 flex items-center justify-between">
+        <Tip content={REASON_KIND_TIP[reason.kind]} side="left">
+          <span className="text-[11px] font-semibold text-foreground cursor-help">
+            {REASON_KIND_LABEL[reason.kind]}
+          </span>
+        </Tip>
+        <Tip
+          content={`Confidence contributed by this detection method: ${confidencePct}%.`}
+          side="left"
+        >
+          <span className={`text-[10px] font-semibold tabular-nums cursor-help ${
+            confidencePct >= 85
+              ? "text-green-600"
+              : confidencePct >= 60
+                ? "text-yellow-600"
+                : "text-muted-foreground"
+          }`}>
+            {confidencePct}%
+          </span>
+        </Tip>
+      </div>
+
+      {/* Evidence entries */}
+      <div className="flex flex-col gap-1">
+        {Object.entries(reason.evidence).map(([key, val]) => {
+          const tip = EVIDENCE_KEY_TIP[key];
+          const formatted =
+            typeof val === "number"
+              ? val < 1
+                ? `${(val * 100).toFixed(1)}%`
+                : val.toFixed(2)
+              : typeof val === "boolean"
+                ? val ? "yes" : "no"
+                : Array.isArray(val)
+                  ? JSON.stringify(val)
+                  : String(val);
+
+          return (
+            <div key={key} className="flex items-start justify-between gap-2">
+              {tip ? (
+                <Tip content={tip} side="left">
+                  <span className="text-[10px] text-muted-foreground cursor-help underline decoration-dotted underline-offset-2">
+                    {key}
+                  </span>
+                </Tip>
+              ) : (
+                <span className="text-[10px] text-muted-foreground">{key}</span>
+              )}
+              <span className="text-right font-mono text-[10px] text-foreground">
+                {formatted}
+              </span>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
