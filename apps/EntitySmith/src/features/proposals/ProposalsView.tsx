@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronUp,
+  Layers,
   Loader2,
   RefreshCw,
   XCircle,
@@ -39,6 +40,85 @@ function Tip({
   );
 }
 
+// ── Proposal grouping ──────────────────────────────────────────────────────────
+
+interface ProposalGroup {
+  groupKey: string;
+  fromEntity: string;
+  fromColumn: string;
+  toEntity: string;
+  toColumn: string;
+  /** Sorted: accepted/modified first, then pending by confidence desc, then rejected */
+  proposals: Proposal[];
+}
+
+function buildGroups(proposals: Proposal[]): ProposalGroup[] {
+  const map = new Map<string, ProposalGroup>();
+  for (const p of proposals) {
+    // Use null byte as separator — safe since entity/column names can't contain it
+    const key = `${p.fromEntity}\0${p.fromColumn}\0${p.toEntity}\0${p.toColumn}`;
+    let g = map.get(key);
+    if (!g) {
+      g = {
+        groupKey: key,
+        fromEntity: p.fromEntity,
+        fromColumn: p.fromColumn,
+        toEntity: p.toEntity,
+        toColumn: p.toColumn,
+        proposals: [],
+      };
+      map.set(key, g);
+    }
+    g.proposals.push(p);
+  }
+
+  const groups = Array.from(map.values());
+
+  // Sort proposals within each group: accepted/modified first, then pending by
+  // confidence desc, then rejected last.
+  for (const g of groups) {
+    g.proposals.sort((a, b) => {
+      const rank = (p: Proposal) =>
+        p.status === "accepted" || p.status === "modified"
+          ? 0
+          : p.status === "pending"
+            ? 1
+            : 2;
+      const rd = rank(a) - rank(b);
+      if (rd !== 0) return rd;
+      return b.confidence - a.confidence;
+    });
+  }
+
+  // Sort groups: pending groups first, then by highest-confidence proposal desc.
+  return groups.sort((a, b) => {
+    const pendingFirst = (g: ProposalGroup) =>
+      g.proposals.some((p) => p.status === "pending") ? 0 : 1;
+    const pd = pendingFirst(a) - pendingFirst(b);
+    if (pd !== 0) return pd;
+    return b.proposals[0].confidence - a.proposals[0].confidence;
+  });
+}
+
+function groupEffectiveStatus(g: ProposalGroup): ProposalStatus {
+  if (g.proposals.some((p) => p.status === "modified")) return "modified";
+  if (g.proposals.some((p) => p.status === "accepted")) return "accepted";
+  if (g.proposals.some((p) => p.status === "pending")) return "pending";
+  return "rejected";
+}
+
+function groupMatchesFilters(
+  g: ProposalGroup,
+  statusTab: StatusTab,
+  originFilter: OriginFilter,
+): boolean {
+  return g.proposals.some((p) => {
+    const statusOk = statusTab === "all" || p.status === statusTab;
+    const originOk = originFilter === "all" || p.origin === originFilter;
+    return statusOk && originOk;
+  });
+}
+
 // ── Props ─────────────────────────────────────────────────────────────────────
 
 interface ProposalsViewProps {
@@ -62,17 +142,18 @@ export function ProposalsView({
     isLoading,
     isGenerating,
     error,
-    pendingCount,
     generateProposals,
     reviewProposal,
     clearError,
   } = useProposals();
 
-  const filtered = proposals.filter((p) => {
-    const statusOk = statusTab === "all" || p.status === statusTab;
-    const originOk = originFilter === "all" || p.origin === originFilter;
-    return statusOk && originOk;
-  });
+  const allGroups = buildGroups(proposals);
+  const filteredGroups = allGroups.filter((g) =>
+    groupMatchesFilters(g, statusTab, originFilter),
+  );
+  const pendingGroupCount = allGroups.filter((g) =>
+    g.proposals.some((p) => p.status === "pending"),
+  ).length;
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -91,9 +172,9 @@ export function ProposalsView({
                 )}
               >
                 {tab.label}
-                {tab.value === "pending" && pendingCount > 0 && (
+                {tab.value === "pending" && pendingGroupCount > 0 && (
                   <span className="ml-1.5 rounded-full bg-primary px-1.5 py-0.5 text-[10px] text-primary-foreground">
-                    {pendingCount}
+                    {pendingGroupCount}
                   </span>
                 )}
               </button>
@@ -155,15 +236,15 @@ export function ProposalsView({
       <div className="flex-1 overflow-y-auto">
         {isLoading ? (
           <LoadingState />
-        ) : filtered.length === 0 ? (
+        ) : filteredGroups.length === 0 ? (
           <EmptyState statusTab={statusTab} />
         ) : (
           <ul className="divide-y divide-border">
-            {filtered.map((p) => (
-              <ProposalRow
-                key={p.id}
-                proposal={p}
-                isSelected={p.id === selectedProposalId}
+            {filteredGroups.map((g) => (
+              <ProposalGroupRow
+                key={g.groupKey}
+                group={g}
+                selectedProposalId={selectedProposalId}
                 onSelect={onProposalSelect}
                 onReview={reviewProposal}
               />
@@ -175,16 +256,16 @@ export function ProposalsView({
   );
 }
 
-// ── ProposalRow ───────────────────────────────────────────────────────────────
+// ── ProposalGroupRow ───────────────────────────────────────────────────────────
 
-function ProposalRow({
-  proposal: p,
-  isSelected,
+function ProposalGroupRow({
+  group,
+  selectedProposalId,
   onSelect,
   onReview,
 }: {
-  proposal: Proposal;
-  isSelected: boolean;
+  group: ProposalGroup;
+  selectedProposalId: string | null;
   onSelect: (proposal: Proposal | null) => void;
   onReview: (
     id: string,
@@ -195,28 +276,56 @@ function ProposalRow({
 }) {
   const [expanded, setExpanded] = useState(false);
   const [busy, setBusy] = useState(false);
+
+  const primaryProposal = group.proposals[0];
+  const pendingProposals = group.proposals.filter((p) => p.status === "pending");
+  const isPending = pendingProposals.length > 0;
+  const effectiveStatus = groupEffectiveStatus(group);
+  const isSelected = group.proposals.some((p) => p.id === selectedProposalId);
+  const effectivePredicate =
+    primaryProposal.reviewedPredicate ?? primaryProposal.suggestedPredicate;
+
+  // Edit state uses primary proposal's values
   const [editPredicate, setEditPredicate] = useState(
-    p.reviewedPredicate ?? p.suggestedPredicate,
+    primaryProposal.reviewedPredicate ?? primaryProposal.suggestedPredicate,
   );
   const [editCardinality, setEditCardinality] = useState(
-    p.reviewedCardinality ?? p.suggestedCardinality,
+    primaryProposal.reviewedCardinality ?? primaryProposal.suggestedCardinality,
   );
-
-  const isPending = p.status === "pending";
-  const effectivePredicate = p.reviewedPredicate ?? p.suggestedPredicate;
 
   async function handle(action: "accept" | "reject" | "modify") {
     setBusy(true);
     try {
-      await onReview(
-        p.id,
-        action,
-        action === "modify" ? editPredicate : undefined,
-        action === "modify" ? editCardinality : undefined,
-      );
+      if (action === "reject") {
+        // Reject all pending proposals in this group
+        for (const p of pendingProposals) {
+          await onReview(p.id, "reject");
+        }
+      } else {
+        // Accept/modify: promote the highest-confidence pending proposal.
+        // Then reject the remaining pending ones to avoid creating duplicate
+        // relationships in the schema graph (promote_proposal calls add_relationship
+        // which is not idempotent).
+        const [primary, ...rest] = pendingProposals;
+        if (primary) {
+          await onReview(
+            primary.id,
+            action,
+            action === "modify" ? editPredicate : undefined,
+            action === "modify" ? editCardinality : undefined,
+          );
+          for (const p of rest) {
+            await onReview(p.id, "reject");
+          }
+        }
+      }
     } finally {
       setBusy(false);
     }
+  }
+
+  function handleRowClick() {
+    onSelect(isSelected ? null : primaryProposal);
   }
 
   return (
@@ -224,8 +333,8 @@ function ProposalRow({
       <div
         role="button"
         tabIndex={0}
-        onClick={() => onSelect(isSelected ? null : p)}
-        onKeyDown={(e) => e.key === "Enter" && onSelect(isSelected ? null : p)}
+        onClick={handleRowClick}
+        onKeyDown={(e) => e.key === "Enter" && handleRowClick()}
         className={cn(
           "flex cursor-pointer items-start gap-3 px-4 py-3 transition-colors",
           isSelected
@@ -237,17 +346,17 @@ function ProposalRow({
       >
         {/* Status icon */}
         <div className="mt-0.5 shrink-0">
-          <StatusIcon status={p.status} />
+          <StatusIcon status={effectiveStatus} />
         </div>
 
         {/* Main content */}
         <div className="min-w-0 flex-1">
           {/* Connection line */}
           <div className="flex flex-wrap items-center gap-1.5">
-            <EntityChip entity={p.fromEntity} column={p.fromColumn} />
+            <EntityChip entity={group.fromEntity} column={group.fromColumn} />
             <ArrowRight size={12} className="shrink-0 text-muted-foreground" />
             <Tip
-              content={`Relationship predicate — the named edge in the graph. This is the RDF property that will link the two entity types in the exported knowledge graph.`}
+              content="Relationship predicate — the named edge in the graph. This is the RDF property that will link the two entity types in the exported knowledge graph."
               side="top"
             >
               <span className="font-mono text-[11px] text-primary cursor-help">
@@ -255,20 +364,38 @@ function ProposalRow({
               </span>
             </Tip>
             <ArrowRight size={12} className="shrink-0 text-muted-foreground" />
-            <EntityChip entity={p.toEntity} column={p.toColumn} />
+            <EntityChip entity={group.toEntity} column={group.toColumn} />
           </div>
 
           {/* Meta row */}
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-            <ConfidenceBadge confidence={p.confidence} />
-            <KindBadge kind={p.kind} />
-            {p.suggestedCardinality !== "unknown" && (
+            <ConfidenceBadge confidence={primaryProposal.confidence} />
+
+            {/* One kind badge per distinct method */}
+            {group.proposals.map((p) => (
+              <KindBadge key={p.id} kind={p.kind} />
+            ))}
+
+            {/* Multi-method badge */}
+            {group.proposals.length > 1 && (
+              <Tip
+                content={`This connection was independently detected by ${group.proposals.length} different analysis methods. Multiple signals increase confidence that the relationship is real.`}
+                side="top"
+              >
+                <span className="inline-flex items-center gap-0.5 rounded bg-primary/10 px-1 py-0.5 text-[9px] font-semibold text-primary cursor-help">
+                  <Layers size={8} />
+                  {group.proposals.length} methods
+                </span>
+              </Tip>
+            )}
+
+            {primaryProposal.suggestedCardinality !== "unknown" && (
               <Tip
                 content="Expected multiplicity: 1:1 (one-to-one), 1:N (one-to-many), or N:N (many-to-many). Inferred from the distribution of values in the sample data."
                 side="top"
               >
                 <span className="text-[10px] text-muted-foreground cursor-help">
-                  {p.suggestedCardinality}
+                  {primaryProposal.suggestedCardinality}
                 </span>
               </Tip>
             )}
@@ -317,13 +444,19 @@ function ProposalRow({
 
       {/* Expanded detail */}
       {expanded && (
-        <div className="border-t border-border/50 bg-muted/20 px-4 py-3">
-          <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-[11px]">
-            <EvidenceSection evidence={p.evidence} kind={p.kind} />
-          </div>
+        <div className="border-t border-border/50 bg-muted/20 px-4 py-3 space-y-3">
+          {/* Per-method evidence sections */}
+          {group.proposals.map((p, i) => (
+            <MethodEvidenceSection
+              key={p.id}
+              proposal={p}
+              showDivider={i > 0}
+            />
+          ))}
 
+          {/* Edit + action row */}
           {isPending && (
-            <div className="mt-3 flex items-end gap-2 border-t border-border/50 pt-3">
+            <div className="flex items-end gap-2 border-t border-border/50 pt-3">
               <div className="flex flex-col gap-1">
                 <Tip
                   content="The RDF predicate name used for this relationship in the exported graph. You can rename it to something more semantically meaningful (e.g. 'places' instead of 'has_user')."
@@ -390,6 +523,47 @@ function ProposalRow({
       )}
     </li>
   );
+}
+
+// ── MethodEvidenceSection ──────────────────────────────────────────────────────
+
+function MethodEvidenceSection({
+  proposal: p,
+  showDivider,
+}: {
+  proposal: Proposal;
+  showDivider: boolean;
+}) {
+  return (
+    <div className={showDivider ? "border-t border-border/40 pt-3" : ""}>
+      {/* Method header */}
+      <div className="mb-2 flex items-center gap-2">
+        <KindBadge kind={p.kind} />
+        <ConfidenceBadge confidence={p.confidence} />
+        <span className="text-[10px] text-muted-foreground ml-auto">
+          <ProposalStatusLabel status={p.status} />
+        </span>
+      </div>
+
+      {/* Evidence grid */}
+      <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-[11px]">
+        <EvidenceSection evidence={p.evidence} kind={p.kind} />
+      </div>
+    </div>
+  );
+}
+
+function ProposalStatusLabel({ status }: { status: ProposalStatus }) {
+  switch (status) {
+    case "pending":
+      return <span className="text-muted-foreground">pending</span>;
+    case "accepted":
+      return <span className="text-green-600">accepted</span>;
+    case "modified":
+      return <span className="text-blue-500">modified</span>;
+    case "rejected":
+      return <span className="text-muted-foreground/50">rejected</span>;
+  }
 }
 
 // ── Evidence section ──────────────────────────────────────────────────────────
@@ -540,23 +714,23 @@ function EntityChip({
 }
 
 function ConfidenceBadge({ confidence }: { confidence: number }) {
-  const pct = Math.round(confidence * 100);
+  const p = Math.round(confidence * 100);
   const color =
-    pct >= 85
+    p >= 85
       ? "text-green-600"
-      : pct >= 60
+      : p >= 60
         ? "text-yellow-600"
         : "text-muted-foreground";
   const label =
-    pct >= 85 ? "High confidence" : pct >= 60 ? "Medium confidence" : "Low confidence";
+    p >= 85 ? "High confidence" : p >= 60 ? "Medium confidence" : "Low confidence";
 
   return (
     <Tip
-      content={`${label} (${pct}%). Declared FKs score 95%, soft FK name patterns score 70%, cross-source heuristics vary by evidence strength. Always verify before accepting.`}
+      content={`${label} (${p}%). Declared FKs score 95%, soft FK name patterns score 70%, cross-source heuristics vary by evidence strength. Always verify before accepting.`}
       side="top"
     >
       <span className={cn("text-[10px] font-semibold tabular-nums cursor-help", color)}>
-        {pct}%
+        {p}%
       </span>
     </Tip>
   );
