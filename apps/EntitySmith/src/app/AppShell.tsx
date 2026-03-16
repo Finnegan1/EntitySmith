@@ -6,13 +6,14 @@ import { DetailsPanel } from "./DetailsPanel";
 import { StatusBar } from "./StatusBar";
 import { NewProjectModal } from "./NewProjectModal";
 import { useProject } from "@/hooks/useProject";
-import type { AppView, SourceDescriptor } from "@/types";
+import type { AppView, Proposal, SourceDescriptor } from "@/types";
 
 export function AppShell() {
   const [activeView, setActiveView] = useState<AppView>("sources");
   const [detailsOpen, setDetailsOpen] = useState(true);
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [selectedSource, setSelectedSource] = useState<SourceDescriptor | null>(null);
+  const [selectedProposal, setSelectedProposal] = useState<Proposal | null>(null);
 
   const { project, isLoading, error, clearError, createProject, openProject } =
     useProject();
@@ -22,9 +23,10 @@ export function AppShell() {
     if (project !== null) setNewProjectOpen(false);
   }, [project]);
 
-  // Clear selected source when switching away from the sources view.
+  // Clear selections when switching views.
   useEffect(() => {
     if (activeView !== "sources") setSelectedSource(null);
+    if (activeView !== "proposals") setSelectedProposal(null);
   }, [activeView]);
 
   function handleNewProject() {
@@ -64,6 +66,8 @@ export function AppShell() {
             isLoading={isLoading}
             selectedSourceId={selectedSource?.id ?? null}
             onSourceSelect={setSelectedSource}
+            selectedProposalId={selectedProposal?.id ?? null}
+            onProposalSelect={setSelectedProposal}
           />
         </main>
 
@@ -71,6 +75,7 @@ export function AppShell() {
           <DetailsPanel
             activeView={activeView}
             selectedSource={selectedSource}
+            selectedProposal={selectedProposal}
             onClose={() => setDetailsOpen(false)}
           />
         )}

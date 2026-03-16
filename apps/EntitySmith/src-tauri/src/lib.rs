@@ -54,6 +54,9 @@ pub fn run() {
             commands::profiling::get_source_profile_summary,
             commands::jobs::list_jobs,
             commands::jobs::get_job,
+            commands::proposals::generate_proposals_cmd,
+            commands::proposals::list_proposals,
+            commands::proposals::review_proposal,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

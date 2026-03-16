@@ -253,8 +253,23 @@ pub struct Proposal {
     pub status: ProposalStatus,
     pub confidence: f64,
     pub origin: ProposalOrigin,
+    // Connection endpoints
+    pub from_source_id: EntityId,
+    pub from_entity: String,
+    pub from_column: String,
+    pub to_source_id: EntityId,
+    pub to_entity: String,
+    pub to_column: String,
+    // Suggested relationship (system-generated defaults)
+    pub suggested_predicate: String,
+    pub suggested_cardinality: String,
+    // User modifications (populated when status = Modified)
+    pub reviewed_predicate: Option<String>,
+    pub reviewed_cardinality: Option<String>,
+    /// Method-specific evidence (JSON blob: overlap counts, similarity scores, etc.)
     pub evidence: serde_json::Value,
     pub created_at: String,
+    pub updated_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -284,6 +299,67 @@ pub enum ProposalOrigin {
     Heuristic,
     Embedding,
     Llm,
+}
+
+impl ProposalKind {
+    pub fn to_db_str(&self) -> &'static str {
+        match self {
+            ProposalKind::ForeignKey => "foreign_key",
+            ProposalKind::SoftForeignKey => "soft_foreign_key",
+            ProposalKind::ColumnNameSimilarity => "column_name_similarity",
+            ProposalKind::SampleValueOverlap => "sample_value_overlap",
+            ProposalKind::EmbeddingSimilarity => "embedding_similarity",
+            ProposalKind::LlmReasoning => "llm_reasoning",
+        }
+    }
+    pub fn from_db_str(s: &str) -> Self {
+        match s {
+            "foreign_key" => ProposalKind::ForeignKey,
+            "soft_foreign_key" => ProposalKind::SoftForeignKey,
+            "column_name_similarity" => ProposalKind::ColumnNameSimilarity,
+            "sample_value_overlap" => ProposalKind::SampleValueOverlap,
+            "embedding_similarity" => ProposalKind::EmbeddingSimilarity,
+            _ => ProposalKind::LlmReasoning,
+        }
+    }
+}
+
+impl ProposalStatus {
+    pub fn to_db_str(&self) -> &'static str {
+        match self {
+            ProposalStatus::Pending => "pending",
+            ProposalStatus::Accepted => "accepted",
+            ProposalStatus::Rejected => "rejected",
+            ProposalStatus::Modified => "modified",
+        }
+    }
+    pub fn from_db_str(s: &str) -> Self {
+        match s {
+            "accepted" => ProposalStatus::Accepted,
+            "rejected" => ProposalStatus::Rejected,
+            "modified" => ProposalStatus::Modified,
+            _ => ProposalStatus::Pending,
+        }
+    }
+}
+
+impl ProposalOrigin {
+    pub fn to_db_str(&self) -> &'static str {
+        match self {
+            ProposalOrigin::DeclaredFk => "declared_fk",
+            ProposalOrigin::Heuristic => "heuristic",
+            ProposalOrigin::Embedding => "embedding",
+            ProposalOrigin::Llm => "llm",
+        }
+    }
+    pub fn from_db_str(s: &str) -> Self {
+        match s {
+            "declared_fk" => ProposalOrigin::DeclaredFk,
+            "embedding" => ProposalOrigin::Embedding,
+            "llm" => ProposalOrigin::Llm,
+            _ => ProposalOrigin::Heuristic,
+        }
+    }
 }
 
 /// Provenance record attached to decisions and proposals.

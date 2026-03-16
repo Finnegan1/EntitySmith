@@ -131,6 +131,8 @@ export type ProposalStatus = "pending" | "accepted" | "rejected" | "modified";
 
 export type ProposalOrigin = "declared_fk" | "heuristic" | "embedding" | "llm";
 
+export type ReviewAction = "accept" | "reject" | "modify";
+
 export interface Proposal {
   id: EntityId;
   projectId: EntityId;
@@ -138,8 +140,22 @@ export interface Proposal {
   status: ProposalStatus;
   confidence: number;
   origin: ProposalOrigin;
+  // Connection endpoints
+  fromSourceId: EntityId;
+  fromEntity: string;
+  fromColumn: string;
+  toSourceId: EntityId;
+  toEntity: string;
+  toColumn: string;
+  // Relationship
+  suggestedPredicate: string;
+  suggestedCardinality: string;
+  reviewedPredicate?: string;
+  reviewedCardinality?: string;
+  // Method-specific evidence
   evidence: Record<string, unknown>;
   createdAt: string;
+  updatedAt: string;
 }
 
 // ── Provenance ────────────────────────────────────────────────────────────────

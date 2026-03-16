@@ -5,17 +5,19 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { ProfilePanel, ProfileLoading } from "@/features/sources/ProfilePanel";
 import { useSourceProfile } from "@/hooks/useSourceProfile";
-import type { AppView, SourceDescriptor, SourceKind } from "@/types";
+import type { AppView, Proposal, SourceDescriptor, SourceKind } from "@/types";
 
 interface DetailsPanelProps {
   activeView: AppView;
   selectedSource: SourceDescriptor | null;
+  selectedProposal: Proposal | null;
   onClose: () => void;
 }
 
 export function DetailsPanel({
   activeView,
   selectedSource,
+  selectedProposal,
   onClose,
 }: DetailsPanelProps) {
   return (
@@ -35,6 +37,8 @@ export function DetailsPanel({
       <div className="flex-1 overflow-auto">
         {activeView === "sources" && selectedSource ? (
           <SourceDetail source={selectedSource} />
+        ) : activeView === "proposals" && selectedProposal ? (
+          <ProposalDetail proposal={selectedProposal} />
         ) : (
           <EmptyDetail message={PANEL_EMPTY[activeView]} />
         )}
@@ -170,6 +174,119 @@ function DetailRow({
         {label}
       </p>
       {children}
+    </div>
+  );
+}
+
+// ── Proposal detail ───────────────────────────────────────────────────────────
+
+const PROPOSAL_KIND_LABEL: Record<Proposal["kind"], string> = {
+  foreign_key: "Declared FK",
+  soft_foreign_key: "Soft FK",
+  column_name_similarity: "Name similarity",
+  sample_value_overlap: "Value overlap",
+  embedding_similarity: "Embedding",
+  llm_reasoning: "LLM reasoning",
+};
+
+const STATUS_COLOR: Record<Proposal["status"], string> = {
+  pending: "text-muted-foreground",
+  accepted: "text-green-600",
+  modified: "text-blue-500",
+  rejected: "text-muted-foreground/50",
+};
+
+function ProposalDetail({ proposal: p }: { proposal: Proposal }) {
+  const effectivePredicate = p.reviewedPredicate ?? p.suggestedPredicate;
+  const effectiveCardinality = p.reviewedCardinality ?? p.suggestedCardinality;
+  const confidencePct = Math.round(p.confidence * 100);
+
+  return (
+    <div className="flex flex-col gap-0 p-4">
+      {/* Connection summary */}
+      <div className="mb-3 rounded-md border border-border bg-muted/30 px-3 py-2.5">
+        <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Connection
+        </p>
+        <div className="space-y-0.5 font-mono text-[11px]">
+          <p className="text-foreground">
+            <span className="text-muted-foreground">{p.fromEntity}</span>
+            <span className="text-muted-foreground/50">.</span>
+            {p.fromColumn}
+          </p>
+          <p className="pl-2 text-primary">→ {effectivePredicate}</p>
+          <p className="text-foreground">
+            <span className="text-muted-foreground">{p.toEntity}</span>
+            <span className="text-muted-foreground/50">.</span>
+            {p.toColumn}
+          </p>
+        </div>
+      </div>
+
+      <Separator className="mb-3" />
+
+      <DetailRow label="Status">
+        <p className={`text-xs font-medium capitalize ${STATUS_COLOR[p.status]}`}>
+          {p.status}
+        </p>
+      </DetailRow>
+
+      <DetailRow label="Confidence">
+        <p className="text-xs text-foreground">{confidencePct}%</p>
+      </DetailRow>
+
+      <DetailRow label="Kind">
+        <p className="text-xs text-foreground">{PROPOSAL_KIND_LABEL[p.kind]}</p>
+      </DetailRow>
+
+      <DetailRow label="Cardinality">
+        <p className="text-xs text-foreground font-mono">
+          {effectiveCardinality === "unknown" ? "—" : effectiveCardinality}
+        </p>
+      </DetailRow>
+
+      <Separator className="my-3" />
+
+      <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        Evidence
+      </p>
+      <div className="flex flex-col gap-1.5">
+        {Object.entries(p.evidence).map(([key, val]) => (
+          <div key={key} className="flex items-start justify-between gap-2">
+            <span className="text-[11px] text-muted-foreground">{key}</span>
+            <span className="text-right font-mono text-[11px] text-foreground">
+              {typeof val === "number"
+                ? val < 1
+                  ? `${(val * 100).toFixed(1)}%`
+                  : val.toFixed(2)
+                : typeof val === "boolean"
+                  ? val ? "yes" : "no"
+                  : Array.isArray(val)
+                    ? JSON.stringify(val)
+                    : String(val)}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {(p.reviewedPredicate || p.reviewedCardinality) && (
+        <>
+          <Separator className="my-3" />
+          <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            User modifications
+          </p>
+          {p.reviewedPredicate && (
+            <DetailRow label="Predicate">
+              <p className="font-mono text-xs text-foreground">{p.reviewedPredicate}</p>
+            </DetailRow>
+          )}
+          {p.reviewedCardinality && (
+            <DetailRow label="Cardinality">
+              <p className="font-mono text-xs text-foreground">{p.reviewedCardinality}</p>
+            </DetailRow>
+          )}
+        </>
+      )}
     </div>
   );
 }

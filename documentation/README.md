@@ -13,6 +13,7 @@ Each file covers a specific area; entries explain not just *what* was built but 
 | [phase-2-sources.md](./phase-2-sources.md) | Source registration CRUD, kind system, capabilities |
 | [phase-3-profiling.md](./phase-3-profiling.md) | Source profiling engine, three adapters, Migration 3, ProfilePanel |
 | [phase-4-jobs.md](./phase-4-jobs.md) | Job system, async profile_source, job:update / profile:updated events, JobsIndicator |
+| [phase-5-proposals.md](./phase-5-proposals.md) | Stage 3 candidate graph generation: FK detection, soft FK, cross-source name/value heuristics, ProposalsView |
 | [tooling.md](./tooling.md) | shadcn + Tailwind v4 setup, path aliases, Vite/Tauri integration |
 
 ## Electron prototype reference

@@ -9,7 +9,8 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SourcesView } from "@/features/sources/SourcesView";
-import type { AppView, ProjectState, SourceDescriptor } from "@/types";
+import { ProposalsView } from "@/features/proposals/ProposalsView";
+import type { AppView, Proposal, ProjectState, SourceDescriptor } from "@/types";
 
 interface WorkspaceAreaProps {
   activeView: AppView;
@@ -19,6 +20,8 @@ interface WorkspaceAreaProps {
   isLoading?: boolean;
   selectedSourceId: string | null;
   onSourceSelect: (source: SourceDescriptor | null) => void;
+  selectedProposalId: string | null;
+  onProposalSelect: (proposal: Proposal | null) => void;
 }
 
 export function WorkspaceArea({
@@ -29,6 +32,8 @@ export function WorkspaceArea({
   isLoading = false,
   selectedSourceId,
   onSourceSelect,
+  selectedProposalId,
+  onProposalSelect,
 }: WorkspaceAreaProps) {
   if (!project) {
     return (
@@ -49,6 +54,12 @@ export function WorkspaceArea({
             projectId={project.id}
             selectedSourceId={selectedSourceId}
             onSourceSelect={onSourceSelect}
+          />
+        ) : activeView === "proposals" ? (
+          <ProposalsView
+            projectId={project.id}
+            selectedProposalId={selectedProposalId}
+            onProposalSelect={onProposalSelect}
           />
         ) : (
           <div className="flex h-full items-center justify-center p-6">
