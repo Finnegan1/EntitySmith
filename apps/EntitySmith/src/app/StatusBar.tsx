@@ -1,5 +1,6 @@
 import { Circle } from "lucide-react";
 import { usePing } from "@/hooks/usePing";
+import { JobsIndicator } from "@/features/jobs/JobsIndicator";
 
 interface StatusBarProps {
   projectName: string | null;
@@ -22,6 +23,7 @@ export function StatusBar({ projectName }: StatusBarProps) {
       </div>
 
       <div className="flex items-center gap-3">
+        <JobsIndicator />
         {response && (
           <span className="text-[11px] text-muted-foreground">
             v{response.version}

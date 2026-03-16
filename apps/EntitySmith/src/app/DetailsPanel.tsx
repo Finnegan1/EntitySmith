@@ -50,7 +50,7 @@ function SourceDetail({ source }: { source: SourceDescriptor }) {
   const canProfile = caps.find((c) => c.label === "Profile")?.enabled ?? false;
 
   const { profile, isLoading, error, profileSource, loadProfile, clearError } =
-    useSourceProfile();
+    useSourceProfile(source.id);
 
   // Load existing profile whenever the selected source changes.
   useEffect(() => {

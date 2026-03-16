@@ -13,14 +13,19 @@ pub mod proposals;
 /// - `Option` represents "no project open" cleanly without a sentinel value.
 /// - `std::sync::Mutex` (not `tokio`) is intentional: SQLite operations are
 ///   fast and synchronous; we never hold this lock across an `.await` point.
+///
+/// `jobs` is an `Arc<JobManager>` so spawned background threads can update
+/// job state independently of the project lock.
 pub struct AppState {
     pub project: std::sync::Mutex<Option<project_store::ProjectStore>>,
+    pub jobs: std::sync::Arc<jobs::JobManager>,
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let state = AppState {
         project: std::sync::Mutex::new(None),
+        jobs: std::sync::Arc::new(jobs::JobManager::new()),
     };
 
     let mut builder = tauri::Builder::default();
@@ -47,6 +52,8 @@ pub fn run() {
             commands::profiling::profile_source,
             commands::profiling::get_source_profile,
             commands::profiling::get_source_profile_summary,
+            commands::jobs::list_jobs,
+            commands::jobs::get_job,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

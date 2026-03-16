@@ -12,6 +12,7 @@ Each file covers a specific area; entries explain not just *what* was built but 
 | [phase-1-project-persistence.md](./phase-1-project-persistence.md) | SQLite project store, migrations, IPC commands, new/open project flow |
 | [phase-2-sources.md](./phase-2-sources.md) | Source registration CRUD, kind system, capabilities |
 | [phase-3-profiling.md](./phase-3-profiling.md) | Source profiling engine, three adapters, Migration 3, ProfilePanel |
+| [phase-4-jobs.md](./phase-4-jobs.md) | Job system, async profile_source, job:update / profile:updated events, JobsIndicator |
 | [tooling.md](./tooling.md) | shadcn + Tailwind v4 setup, path aliases, Vite/Tauri integration |
 
 ## Electron prototype reference
