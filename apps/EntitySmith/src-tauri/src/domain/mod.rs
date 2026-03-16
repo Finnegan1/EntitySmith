@@ -142,6 +142,82 @@ pub enum SourceKind {
     Mysql,
 }
 
+// ── Profiling ─────────────────────────────────────────────────────────────────
+
+/// A table / collection discovered within a source during profiling.
+/// Kept flat (no nested IDs) because the schema graph (Phase 5) will promote
+/// these into proper EntityType nodes. Here we just need stats for display.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceEntityProfile {
+    pub source_id: EntityId,
+    pub name: String,
+    pub row_count: i64,
+}
+
+/// A column / field within a source entity, with statistical metadata.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceAttributeProfile {
+    pub name: String,
+    pub inferred_type: String,
+    pub is_nullable: bool,
+    pub is_pk: bool,
+    pub null_pct: f64,
+    pub unique_pct: f64,
+    pub min_value: Option<String>,
+    pub max_value: Option<String>,
+    pub top_values: Vec<TopValue>,
+}
+
+/// A single value + frequency entry in an attribute's value distribution.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TopValue {
+    pub value: String,
+    pub count: i64,
+}
+
+/// A declared or inferred FK relationship found during profiling.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FkCandidate {
+    pub source_id: EntityId,
+    pub from_entity: String,
+    pub from_column: String,
+    pub to_entity: String,
+    pub to_column: String,
+    pub is_declared: bool,
+}
+
+/// Summary row returned immediately after profiling completes.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceProfileSummary {
+    pub source_id: EntityId,
+    pub fingerprint: String,
+    pub profiled_at: String,
+    pub entity_count: i64,
+}
+
+/// Full profile returned by `get_source_profile` for UI display.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FullSourceProfile {
+    pub summary: SourceProfileSummary,
+    pub entities: Vec<EntityWithAttributes>,
+    pub fk_candidates: Vec<FkCandidate>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EntityWithAttributes {
+    pub profile: SourceEntityProfile,
+    pub attributes: Vec<SourceAttributeProfile>,
+}
+
+// ── Schema Graph ──────────────────────────────────────────────────────────────
+
 /// A canonical entity type in the schema graph.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

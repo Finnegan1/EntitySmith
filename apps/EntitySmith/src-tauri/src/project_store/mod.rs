@@ -1,10 +1,15 @@
 use std::path::{Path, PathBuf};
 
 use chrono::Utc;
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 use uuid::Uuid;
 
-use crate::domain::{ProjectState, SourceDescriptor, SourceKind};
+use crate::domain::{
+    EntityWithAttributes, FkCandidate, FullSourceProfile, ProjectState,
+    SourceAttributeProfile, SourceDescriptor, SourceEntityProfile,
+    SourceKind, SourceProfileSummary, TopValue,
+};
+use crate::adapters::AdapterProfileResult;
 
 // ── Schema ────────────────────────────────────────────────────────────────────
 
@@ -50,7 +55,53 @@ CREATE TABLE IF NOT EXISTS sources (
 CREATE INDEX IF NOT EXISTS sources_project_id ON sources(project_id);
 ";
 
-const CURRENT_SCHEMA_VERSION: u32 = 2;
+const SCHEMA_V3: &str = "
+CREATE TABLE IF NOT EXISTS source_fingerprints (
+    source_id    TEXT PRIMARY KEY NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+    fingerprint  TEXT NOT NULL,
+    profiled_at  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS source_entities (
+    id          TEXT PRIMARY KEY NOT NULL,
+    source_id   TEXT NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+    name        TEXT NOT NULL,
+    row_count   INTEGER NOT NULL DEFAULT 0,
+    created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS source_entities_source_id ON source_entities(source_id);
+
+CREATE TABLE IF NOT EXISTS source_attributes (
+    id             TEXT PRIMARY KEY NOT NULL,
+    entity_id      TEXT NOT NULL REFERENCES source_entities(id) ON DELETE CASCADE,
+    source_id      TEXT NOT NULL,
+    name           TEXT NOT NULL,
+    inferred_type  TEXT NOT NULL DEFAULT 'text',
+    is_nullable    INTEGER NOT NULL DEFAULT 1,
+    is_pk          INTEGER NOT NULL DEFAULT 0,
+    null_pct       REAL NOT NULL DEFAULT 0.0,
+    unique_pct     REAL NOT NULL DEFAULT 0.0,
+    min_value      TEXT,
+    max_value      TEXT,
+    top_values     TEXT NOT NULL DEFAULT '[]',
+    created_at     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS source_attributes_entity_id ON source_attributes(entity_id);
+
+CREATE TABLE IF NOT EXISTS source_fk_candidates (
+    id             TEXT PRIMARY KEY NOT NULL,
+    source_id      TEXT NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+    from_entity    TEXT NOT NULL,
+    from_column    TEXT NOT NULL,
+    to_entity      TEXT NOT NULL,
+    to_column      TEXT NOT NULL,
+    is_declared    INTEGER NOT NULL DEFAULT 0,
+    created_at     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS source_fk_candidates_source_id ON source_fk_candidates(source_id);
+";
+
+const CURRENT_SCHEMA_VERSION: u32 = 3;
 
 // ── ProjectStore ──────────────────────────────────────────────────────────────
 
@@ -319,6 +370,250 @@ impl ProjectStore {
         Ok(sources)
     }
 
+    // ── Profile CRUD ──────────────────────────────────────────────────────────
+
+    /// Persist a full adapter profile result for one source.
+    ///
+    /// This replaces any previously stored profile for the source — all old
+    /// entities, attributes, and FK candidates are deleted before writing the
+    /// new data.
+    pub fn save_source_profile(
+        &self,
+        source_id: &str,
+        fingerprint: &str,
+        result: &AdapterProfileResult,
+    ) -> Result<(), String> {
+        let now = Utc::now().to_rfc3339();
+
+        // Delete stale data (cascade handles child rows).
+        self.conn.execute(
+            "DELETE FROM source_fingerprints WHERE source_id = ?1",
+            params![source_id],
+        ).map_err(|e| format!("Failed to delete old fingerprint: {e}"))?;
+        self.conn.execute(
+            "DELETE FROM source_entities WHERE source_id = ?1",
+            params![source_id],
+        ).map_err(|e| format!("Failed to delete old entities: {e}"))?;
+        self.conn.execute(
+            "DELETE FROM source_fk_candidates WHERE source_id = ?1",
+            params![source_id],
+        ).map_err(|e| format!("Failed to delete old FK candidates: {e}"))?;
+
+        // Insert new fingerprint record.
+        self.conn.execute(
+            "INSERT INTO source_fingerprints (source_id, fingerprint, profiled_at)
+             VALUES (?1, ?2, ?3)",
+            params![source_id, fingerprint, now],
+        ).map_err(|e| format!("Failed to insert fingerprint: {e}"))?;
+
+        for entity in &result.entities {
+            let entity_id = Uuid::new_v4().to_string();
+
+            self.conn.execute(
+                "INSERT INTO source_entities (id, source_id, name, row_count, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![entity_id, source_id, entity.name, entity.row_count, now],
+            ).map_err(|e| format!("Failed to insert entity '{}': {e}", entity.name))?;
+
+            for attr in &entity.attributes {
+                let attr_id = Uuid::new_v4().to_string();
+                let top_json = serde_json::to_string(&attr.top_values.iter().map(|tv| {
+                    serde_json::json!({ "value": tv.value, "count": tv.count })
+                }).collect::<Vec<_>>()).unwrap_or_else(|_| "[]".to_string());
+
+                self.conn.execute(
+                    "INSERT INTO source_attributes
+                     (id, entity_id, source_id, name, inferred_type, is_nullable, is_pk,
+                      null_pct, unique_pct, min_value, max_value, top_values, created_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+                    params![
+                        attr_id, entity_id, source_id, attr.name,
+                        attr.inferred_type,
+                        attr.is_nullable as i32,
+                        attr.is_pk as i32,
+                        attr.null_pct, attr.unique_pct,
+                        attr.min_value, attr.max_value,
+                        top_json, now
+                    ],
+                ).map_err(|e| format!("Failed to insert attribute '{}': {e}", attr.name))?;
+            }
+
+            for fk in &entity.declared_fks {
+                let fk_id = Uuid::new_v4().to_string();
+                self.conn.execute(
+                    "INSERT INTO source_fk_candidates
+                     (id, source_id, from_entity, from_column, to_entity, to_column,
+                      is_declared, created_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7)",
+                    params![
+                        fk_id, source_id, entity.name, fk.from_column,
+                        fk.to_table, fk.to_column, now
+                    ],
+                ).map_err(|e| format!("Failed to insert FK candidate: {e}"))?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Return the stored profile summary for a source, if any.
+    pub fn get_source_profile_summary(
+        &self,
+        source_id: &str,
+    ) -> Result<Option<SourceProfileSummary>, String> {
+        let fp_row: Option<(String, String)> = self.conn
+            .query_row(
+                "SELECT fingerprint, profiled_at FROM source_fingerprints WHERE source_id = ?1",
+                params![source_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()
+            .map_err(|e| format!("Failed to read fingerprint: {e}"))?;
+
+        let (fingerprint, profiled_at) = match fp_row {
+            None => return Ok(None),
+            Some(t) => t,
+        };
+
+        let entity_count: i64 = self.conn
+            .query_row(
+                "SELECT COUNT(*) FROM source_entities WHERE source_id = ?1",
+                params![source_id],
+                |row| row.get(0),
+            )
+            .map_err(|e| format!("Failed to count entities: {e}"))?;
+
+        Ok(Some(SourceProfileSummary {
+            source_id: source_id.to_string(),
+            fingerprint,
+            profiled_at,
+            entity_count,
+        }))
+    }
+
+    /// Return all entities (with their attributes) for a source.
+    pub fn get_source_full_profile(
+        &self,
+        source_id: &str,
+    ) -> Result<Option<FullSourceProfile>, String> {
+        let summary = match self.get_source_profile_summary(source_id)? {
+            None => return Ok(None),
+            Some(s) => s,
+        };
+
+        // Load entities.
+        let entity_rows: Vec<(String, String, i64)> = {
+            let mut stmt = self.conn
+                .prepare(
+                    "SELECT id, name, row_count FROM source_entities
+                     WHERE source_id = ?1 ORDER BY created_at ASC",
+                )
+                .map_err(|e| format!("Failed to prepare entities query: {e}"))?;
+
+            let rows: Vec<(String, String, i64)> = stmt.query_map(params![source_id], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            })
+            .map_err(|e| format!("Failed to query entities: {e}"))?
+            .filter_map(|r| r.ok())
+            .collect();
+            rows
+        };
+
+        let mut entities = Vec::new();
+        let mut all_fk_candidates: Vec<FkCandidate> = Vec::new();
+
+        for (entity_id, entity_name, row_count) in entity_rows {
+            // Load attributes.
+            let attributes: Vec<SourceAttributeProfile> = {
+                let mut stmt = self.conn
+                    .prepare(
+                        "SELECT name, inferred_type, is_nullable, is_pk,
+                                null_pct, unique_pct, min_value, max_value, top_values
+                         FROM source_attributes WHERE entity_id = ?1
+                         ORDER BY created_at ASC",
+                    )
+                    .map_err(|e| format!("Failed to prepare attributes query: {e}"))?;
+
+                type AttrRow = (String, String, i32, i32, f64, f64, Option<String>, Option<String>, String);
+                let raw: Vec<AttrRow> = stmt.query_map(params![entity_id], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, i32>(2)?,
+                        row.get::<_, i32>(3)?,
+                        row.get::<_, f64>(4)?,
+                        row.get::<_, f64>(5)?,
+                        row.get::<_, Option<String>>(6)?,
+                        row.get::<_, Option<String>>(7)?,
+                        row.get::<_, String>(8)?,
+                    ))
+                })
+                .map_err(|e| format!("Failed to query attributes: {e}"))?
+                .filter_map(|r| r.ok())
+                .collect();
+
+                raw.into_iter().map(|(name, inferred_type, is_nullable, is_pk, null_pct,
+                       unique_pct, min_value, max_value, top_json)| {
+                    let top_values: Vec<TopValue> = serde_json::from_str(&top_json)
+                        .unwrap_or_default();
+                    SourceAttributeProfile {
+                        name,
+                        inferred_type,
+                        is_nullable: is_nullable != 0,
+                        is_pk: is_pk != 0,
+                        null_pct,
+                        unique_pct,
+                        min_value,
+                        max_value,
+                        top_values,
+                    }
+                }).collect()
+            };
+
+            entities.push(EntityWithAttributes {
+                profile: SourceEntityProfile {
+                    source_id: source_id.to_string(),
+                    name: entity_name,
+                    row_count,
+                },
+                attributes,
+            });
+        }
+
+        // Load FK candidates.
+        {
+            let mut stmt = self.conn
+                .prepare(
+                    "SELECT from_entity, from_column, to_entity, to_column, is_declared
+                     FROM source_fk_candidates WHERE source_id = ?1",
+                )
+                .map_err(|e| format!("Failed to prepare FK query: {e}"))?;
+
+            let rows: Vec<FkCandidate> = stmt
+                .query_map(params![source_id], |row| {
+                    Ok(FkCandidate {
+                        source_id: source_id.to_string(),
+                        from_entity: row.get(0)?,
+                        from_column: row.get(1)?,
+                        to_entity: row.get(2)?,
+                        to_column: row.get(3)?,
+                        is_declared: row.get::<_, i32>(4)? != 0,
+                    })
+                })
+                .map_err(|e| format!("Failed to query FK candidates: {e}"))?
+                .filter_map(|r| r.ok())
+                .collect();
+
+            all_fk_candidates.extend(rows);
+        }
+
+        Ok(Some(FullSourceProfile {
+            summary,
+            entities,
+            fk_candidates: all_fk_candidates,
+        }))
+    }
+
     /// Fetch a single source by ID.
     fn get_source(&self, source_id: &str) -> Result<SourceDescriptor, String> {
         self.conn
@@ -402,8 +697,18 @@ fn apply_migrations(conn: &Connection) -> Result<(), String> {
         .map_err(|e| format!("Failed to update schema version: {e}"))?;
     }
 
+    if version < 3 {
+        conn.execute_batch(SCHEMA_V3)
+            .map_err(|e| format!("Migration 3 failed: {e}"))?;
+        conn.execute(
+            "UPDATE _meta SET value = '3' WHERE key = 'schema_version'",
+            [],
+        )
+        .map_err(|e| format!("Failed to update schema version: {e}"))?;
+    }
+
     // Future migrations go here:
-    // if version < 3 { ... }
+    // if version < 4 { ... }
 
     let _ = CURRENT_SCHEMA_VERSION;
     Ok(())

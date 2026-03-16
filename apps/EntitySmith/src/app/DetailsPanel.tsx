@@ -1,6 +1,10 @@
+import { useEffect } from "react";
 import { X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { ProfilePanel, ProfileLoading } from "@/features/sources/ProfilePanel";
+import { useSourceProfile } from "@/hooks/useSourceProfile";
 import type { AppView, SourceDescriptor, SourceKind } from "@/types";
 
 interface DetailsPanelProps {
@@ -43,6 +47,21 @@ export function DetailsPanel({
 
 function SourceDetail({ source }: { source: SourceDescriptor }) {
   const caps = CAPABILITIES[source.kind];
+  const canProfile = caps.find((c) => c.label === "Profile")?.enabled ?? false;
+
+  const { profile, isLoading, error, profileSource, loadProfile, clearError } =
+    useSourceProfile();
+
+  // Load existing profile whenever the selected source changes.
+  useEffect(() => {
+    loadProfile(source.id);
+  }, [source.id, loadProfile]);
+
+  async function handleProfile() {
+    clearError();
+    await profileSource(source.id);
+    await loadProfile(source.id);
+  }
 
   return (
     <div className="flex flex-col gap-0 p-4">
@@ -99,13 +118,41 @@ function SourceDetail({ source }: { source: SourceDescriptor }) {
 
       <Separator className="my-3" />
 
-      {/* Profile status placeholder */}
-      <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-        Profile
-      </p>
-      <p className="text-xs text-muted-foreground">
-        Not yet profiled. Profiling will be available in a future phase.
-      </p>
+      {/* Profile section */}
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Profile
+        </p>
+        {canProfile && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-6 text-[10px] px-2"
+            onClick={handleProfile}
+            disabled={isLoading}
+          >
+            {isLoading ? "Running…" : profile ? "Re-profile" : "Profile"}
+          </Button>
+        )}
+      </div>
+
+      {error && (
+        <p className="mb-2 text-[11px] text-destructive">{error}</p>
+      )}
+
+      {isLoading ? (
+        <ProfileLoading />
+      ) : profile ? (
+        <ProfilePanel profile={profile} />
+      ) : canProfile ? (
+        <p className="text-xs text-muted-foreground">
+          Click Profile to analyse this source.
+        </p>
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          This source kind does not support profiling.
+        </p>
+      )}
     </div>
   );
 }

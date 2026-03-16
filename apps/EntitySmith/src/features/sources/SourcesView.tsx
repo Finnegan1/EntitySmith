@@ -121,10 +121,15 @@ function SourceRow({
     : undefined;
 
   return (
-    <button
+    // Use div+role instead of button to avoid invalid nested-button HTML
+    // (the remove icon is also a button, and buttons can't nest in HTML).
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onClick}
+      onKeyDown={(e) => e.key === "Enter" || e.key === " " ? onClick() : undefined}
       className={cn(
-        "group flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-left transition-colors",
+        "group flex w-full cursor-pointer items-center gap-3 rounded-md px-2.5 py-2 text-left transition-colors",
         isSelected
           ? "bg-accent text-accent-foreground"
           : "hover:bg-accent/50 hover:text-accent-foreground"
@@ -149,7 +154,7 @@ function SourceRow({
       >
         <Trash2 size={13} />
       </button>
-    </button>
+    </div>
   );
 }
 

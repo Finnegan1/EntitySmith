@@ -10,6 +10,8 @@ Each file covers a specific area; entries explain not just *what* was built but 
 | [architecture.md](./architecture.md) | Overall three-layer architecture, guiding principles, and how this differs from the Electron prototype |
 | [phase-0-app-shell.md](./phase-0-app-shell.md) | What was done in Phase 0, every non-obvious decision, and what was deliberately deferred |
 | [phase-1-project-persistence.md](./phase-1-project-persistence.md) | SQLite project store, migrations, IPC commands, new/open project flow |
+| [phase-2-sources.md](./phase-2-sources.md) | Source registration CRUD, kind system, capabilities |
+| [phase-3-profiling.md](./phase-3-profiling.md) | Source profiling engine, three adapters, Migration 3, ProfilePanel |
 | [tooling.md](./tooling.md) | shadcn + Tailwind v4 setup, path aliases, Vite/Tauri integration |
 
 ## Electron prototype reference

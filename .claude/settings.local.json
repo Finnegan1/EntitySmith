@@ -29,7 +29,17 @@
       "WebFetch(domain:github.com)",
       "WebFetch(domain:api.github.com)",
       "WebFetch(domain:www.sigmajs.org)",
-      "Bash(bunx:*)"
+      "Bash(bunx:*)",
+      "Bash(gemini:*)",
+      "Bash(cargo check:*)",
+      "mcp___hypothesi_tauri-mcp-server__driver_session",
+      "mcp___hypothesi_tauri-mcp-server__webview_screenshot",
+      "mcp___hypothesi_tauri-mcp-server__webview_interact",
+      "mcp___hypothesi_tauri-mcp-server__webview_wait_for",
+      "mcp___hypothesi_tauri-mcp-server__webview_find_element",
+      "mcp___hypothesi_tauri-mcp-server__webview_execute_js",
+      "mcp___hypothesi_tauri-mcp-server__read_logs",
+      "mcp___hypothesi_tauri-mcp-server__ipc_execute_command"
     ]
   }
 }

@@ -44,6 +44,58 @@ export interface SourceCapabilities {
   supportsEnrichment: boolean;
 }
 
+// ── Profiling ─────────────────────────────────────────────────────────────────
+
+export interface TopValue {
+  value: string;
+  count: number;
+}
+
+export interface SourceAttributeProfile {
+  name: string;
+  inferredType: string;
+  isNullable: boolean;
+  isPk: boolean;
+  nullPct: number;
+  uniquePct: number;
+  minValue?: string;
+  maxValue?: string;
+  topValues: TopValue[];
+}
+
+export interface SourceEntityProfile {
+  sourceId: EntityId;
+  name: string;
+  rowCount: number;
+}
+
+export interface EntityWithAttributes {
+  profile: SourceEntityProfile;
+  attributes: SourceAttributeProfile[];
+}
+
+export interface FkCandidate {
+  sourceId: EntityId;
+  fromEntity: string;
+  fromColumn: string;
+  toEntity: string;
+  toColumn: string;
+  isDeclared: boolean;
+}
+
+export interface SourceProfileSummary {
+  sourceId: EntityId;
+  fingerprint: string;
+  profiledAt: string;
+  entityCount: number;
+}
+
+export interface FullSourceProfile {
+  summary: SourceProfileSummary;
+  entities: EntityWithAttributes[];
+  fkCandidates: FkCandidate[];
+}
+
 // ── Schema Graph ──────────────────────────────────────────────────────────────
 
 export interface EntityType {
