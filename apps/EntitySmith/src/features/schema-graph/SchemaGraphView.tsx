@@ -25,6 +25,7 @@ export function SchemaGraphView({
     loadSchemaGraph,
     createEntityType,
     addRelationship,
+    updateRelationship,
     deleteRelationship,
     bindSourceEntity,
     unbindSourceEntity,
@@ -125,6 +126,7 @@ export function SchemaGraphView({
               onAddRelationship={async (src, tgt, pred) => {
                 await addRelationship(src, tgt, pred);
               }}
+              onUpdateRelationship={updateRelationship}
               onDeleteRelationship={deleteRelationship}
             />
           ) : (

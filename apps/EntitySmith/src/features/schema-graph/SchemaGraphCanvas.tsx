@@ -15,9 +15,11 @@ import {
 import dagre from "@dagrejs/dagre";
 import "@xyflow/react/dist/style.css";
 import { EntityTypeNode, type EntityTypeNodeData, type EntityTypeNodeType } from "./EntityTypeNode";
+import { EditableEdge, type EditableEdgeData } from "./EditableEdge";
 import type { EntityTypeWithBindings, SchemaGraph } from "@/types";
 
 const nodeTypes = { entityType: EntityTypeNode };
+const edgeTypes = { editable: EditableEdge };
 
 const NODE_WIDTH = 220;
 const NODE_HEIGHT = 100; // used by dagre for spacing; nodes with bindings are taller
@@ -72,6 +74,7 @@ interface SchemaGraphCanvasProps {
   selectedEntityTypeId: string | null;
   onEntityTypeSelect: (et: EntityTypeWithBindings | null) => void;
   onAddRelationship: (sourceId: string, targetId: string, predicate: string) => Promise<void>;
+  onUpdateRelationship: (id: string, predicate: string) => Promise<void>;
   onDeleteRelationship: (id: string) => Promise<void>;
 }
 
@@ -80,6 +83,7 @@ export function SchemaGraphCanvas({
   selectedEntityTypeId,
   onEntityTypeSelect,
   onAddRelationship,
+  onUpdateRelationship,
   onDeleteRelationship: _onDeleteRelationship,
 }: SchemaGraphCanvasProps) {
   const positions = useMemo(
@@ -111,20 +115,19 @@ export function SchemaGraphCanvas({
         source: r.sourceEntityTypeId,
         target: r.targetEntityTypeId,
         label: r.predicate,
-        labelBgPadding: [6, 3] as [number, number],
-        labelBgBorderRadius: 4,
-        labelBgStyle: { fill: "#ffffff", stroke: "#e2e8f0", strokeWidth: 1 },
-        labelStyle: { fontSize: 11, fontWeight: 500, fill: "#1e293b" },
+        type: "editable",
         style: { strokeWidth: 1.5, stroke: "#94a3b8" },
-        type: "bezier",
         markerEnd: {
           type: MarkerType.ArrowClosed,
           width: 16,
           height: 16,
           color: "#94a3b8",
         },
+        data: {
+          onUpdate: onUpdateRelationship,
+        } satisfies EditableEdgeData,
       })),
-    [graph.relationships],
+    [graph.relationships, onUpdateRelationship],
   );
 
   const [nodes, setNodes, onNodesChange] = useNodesState<EntityTypeNodeType>(initialNodes);
@@ -174,6 +177,7 @@ export function SchemaGraphCanvas({
       onConnect={onConnect}
       onNodeClick={onNodeClick}
       nodeTypes={nodeTypes}
+      edgeTypes={edgeTypes}
       fitView
       fitViewOptions={{ padding: 0.2 }}
       className="bg-background"

@@ -1001,6 +1001,31 @@ impl ProjectStore {
             .ok_or_else(|| format!("Proposal '{proposal_id}' disappeared after update."))
     }
 
+    /// Reset a proposal back to pending, clearing any reviewed predicate/cardinality.
+    /// Does not touch schema graph objects already created during promotion.
+    pub fn reset_proposal(&self, proposal_id: &str) -> Result<Proposal, String> {
+        let now = Utc::now().to_rfc3339();
+        let affected = self
+            .conn
+            .execute(
+                "UPDATE proposals
+                 SET status = 'pending', reviewed_predicate = NULL,
+                     reviewed_cardinality = NULL, updated_at = ?1
+                 WHERE id = ?2",
+                params![now, proposal_id],
+            )
+            .map_err(|e| format!("Failed to reset proposal: {e}"))?;
+
+        if affected == 0 {
+            return Err(format!("Proposal '{proposal_id}' not found."));
+        }
+
+        self.list_proposals(None)?
+            .into_iter()
+            .find(|p| p.id == proposal_id)
+            .ok_or_else(|| format!("Proposal '{proposal_id}' disappeared after reset."))
+    }
+
     // ── Schema Graph CRUD ─────────────────────────────────────────────────────
 
     /// Create a new canonical entity type for the current project.
@@ -1108,6 +1133,27 @@ impl ProjectStore {
             cardinality: cardinality.map(|s| s.to_string()),
             created_at: now,
         })
+    }
+
+    /// Update the predicate (and optionally cardinality) of an existing relationship.
+    pub fn update_relationship(
+        &self,
+        id: &str,
+        predicate: &str,
+        cardinality: Option<&str>,
+    ) -> Result<(), String> {
+        let affected = self
+            .conn
+            .execute(
+                "UPDATE relationships SET predicate = ?1, cardinality = ?2 WHERE id = ?3",
+                params![predicate, cardinality, id],
+            )
+            .map_err(|e| format!("Failed to update relationship: {e}"))?;
+
+        if affected == 0 {
+            return Err(format!("Relationship '{id}' not found."));
+        }
+        Ok(())
     }
 
     /// Delete a relationship by ID.

@@ -103,6 +103,31 @@ pub fn add_relationship(
     Ok(relationship)
 }
 
+/// Update the predicate (and optionally cardinality) of an existing relationship.
+#[tauri::command]
+pub fn update_relationship(
+    id: String,
+    predicate: String,
+    cardinality: Option<String>,
+    state: State<'_, AppState>,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    let guard = state
+        .project
+        .lock()
+        .map_err(|_| "Project lock poisoned".to_string())?;
+    let store = guard.as_ref().ok_or("No project open")?;
+
+    store.update_relationship(&id, &predicate, cardinality.as_deref())?;
+
+    drop(guard);
+    app_handle
+        .emit("schema:updated", &())
+        .map_err(|e| format!("Emit failed: {e}"))?;
+
+    Ok(())
+}
+
 /// Delete a relationship by ID.
 #[tauri::command]
 pub fn delete_relationship(
@@ -293,6 +318,32 @@ pub fn promote_proposal(
     app_handle
         .emit("schema:updated", &())
         .map_err(|e| format!("Emit schema:updated failed: {e}"))?;
+    app_handle
+        .emit("proposals:updated", &())
+        .map_err(|e| format!("Emit proposals:updated failed: {e}"))?;
+
+    Ok(())
+}
+
+// ── Reset Proposal ────────────────────────────────────────────────────────────
+
+/// Reset a proposal back to pending status, clearing any reviewed predicate/cardinality.
+/// Schema graph objects created during a previous promotion are left in place.
+#[tauri::command]
+pub fn reset_proposal(
+    proposal_id: String,
+    state: State<'_, AppState>,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    let guard = state
+        .project
+        .lock()
+        .map_err(|_| "Project lock poisoned".to_string())?;
+    let store = guard.as_ref().ok_or("No project open")?;
+
+    store.reset_proposal(&proposal_id)?;
+
+    drop(guard);
     app_handle
         .emit("proposals:updated", &())
         .map_err(|e| format!("Emit proposals:updated failed: {e}"))?;

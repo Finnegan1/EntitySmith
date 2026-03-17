@@ -7,6 +7,7 @@ import {
   Layers,
   Loader2,
   RefreshCw,
+  RotateCcw,
   XCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -66,6 +67,7 @@ export function ProposalsView({
     pendingCount,
     generateProposals,
     reviewProposal,
+    resetProposal,
     clearError,
   } = useProposals();
 
@@ -169,6 +171,7 @@ export function ProposalsView({
                 isSelected={p.id === selectedProposalId}
                 onSelect={onProposalSelect}
                 onReview={reviewProposal}
+                onReset={resetProposal}
               />
             ))}
           </ul>
@@ -187,6 +190,7 @@ function ProposalRow({
   isSelected,
   onSelect,
   onReview,
+  onReset,
 }: {
   proposal: Proposal;
   isSelected: boolean;
@@ -199,6 +203,7 @@ function ProposalRow({
     reversed?: boolean,
     inversePredicate?: string,
   ) => Promise<void>;
+  onReset: (id: string) => Promise<void>;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -337,6 +342,20 @@ function ProposalRow({
                 />
               </Tip>
             </>
+          )}
+          {!isPending && (
+            <Tip
+              content="Reset this proposal back to pending so it can be reviewed again. Schema graph objects created during the previous promotion are kept."
+              side="top"
+            >
+              <button
+                onClick={(e) => { e.stopPropagation(); void onReset(p.id); }}
+                disabled={busy}
+                className="rounded p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
+              >
+                <RotateCcw size={13} />
+              </button>
+            </Tip>
           )}
           <button
             onClick={() => setExpanded((v) => !v)}

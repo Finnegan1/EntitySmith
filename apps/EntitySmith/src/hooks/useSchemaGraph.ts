@@ -76,6 +76,14 @@ export function useSchemaGraph() {
     [loadSchemaGraph],
   );
 
+  const updateRelationship = useCallback(
+    async (id: string, predicate: string, cardinality?: string) => {
+      await invoke("update_relationship", { id, predicate, cardinality: cardinality ?? null });
+      await loadSchemaGraph();
+    },
+    [loadSchemaGraph],
+  );
+
   const deleteRelationship = useCallback(
     async (id: string) => {
       await invoke("delete_relationship", { id });
@@ -126,6 +134,7 @@ export function useSchemaGraph() {
     createEntityType,
     deleteEntityType,
     addRelationship,
+    updateRelationship,
     deleteRelationship,
     bindSourceEntity,
     unbindSourceEntity,

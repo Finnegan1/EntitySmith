@@ -61,11 +61,13 @@ pub fn run() {
             commands::schema_graph::delete_entity_type,
             commands::schema_graph::get_schema_graph,
             commands::schema_graph::add_relationship,
+            commands::schema_graph::update_relationship,
             commands::schema_graph::delete_relationship,
             commands::schema_graph::bind_source_entity,
             commands::schema_graph::unbind_source_entity,
             commands::schema_graph::list_source_entities_summary,
             commands::schema_graph::promote_proposal,
+            commands::schema_graph::reset_proposal,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -18,6 +18,7 @@ interface UseProposalsReturn {
     reversed?: boolean,
     inversePredicate?: string,
   ) => Promise<void>;
+  resetProposal: (proposalId: string) => Promise<void>;
   reload: () => Promise<void>;
   clearError: () => void;
 }
@@ -125,6 +126,15 @@ export function useProposals(
     [],
   );
 
+  const resetProposal = useCallback(async (proposalId: string) => {
+    try {
+      await invoke("reset_proposal", { proposalId });
+      // proposals:updated event will trigger reload
+    } catch (e) {
+      setError(String(e));
+    }
+  }, []);
+
   const clearError = useCallback(() => setError(null), []);
 
   const pendingCount = proposals.filter((p) => p.status === "pending").length;
@@ -137,6 +147,7 @@ export function useProposals(
     pendingCount,
     generateProposals,
     reviewProposal,
+    resetProposal,
     reload: load,
     clearError,
   };
