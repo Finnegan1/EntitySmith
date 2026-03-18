@@ -68,6 +68,7 @@ pub fn run() {
             commands::schema_graph::list_source_entities_summary,
             commands::schema_graph::promote_proposal,
             commands::schema_graph::reset_proposal,
+            commands::schema_graph::rename_proposal_relationship,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

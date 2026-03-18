@@ -15,7 +15,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useProposals } from "@/hooks/useProposals";
-import type { Proposal, ProposalReason, ProposalStatus } from "@/types";
+import { useSchemaGraph } from "@/hooks/useSchemaGraph";
+import type { Proposal, ProposalReason, ProposalStatus, Relationship, SchemaGraph } from "@/types";
 
 type StatusTab = "all" | ProposalStatus;
 type OriginFilter = "all" | "declared_fk" | "heuristic";
@@ -70,6 +71,8 @@ export function ProposalsView({
     resetProposal,
     clearError,
   } = useProposals();
+
+  const { schemaGraph, updateRelationship } = useSchemaGraph();
 
   const filtered = proposals.filter((p) => {
     const statusOk = statusTab === "all" || p.status === statusTab;
@@ -172,6 +175,8 @@ export function ProposalsView({
                 onSelect={onProposalSelect}
                 onReview={reviewProposal}
                 onReset={resetProposal}
+                schemaGraph={schemaGraph}
+                updateRelationship={updateRelationship}
               />
             ))}
           </ul>
@@ -191,6 +196,8 @@ function ProposalRow({
   onSelect,
   onReview,
   onReset,
+  schemaGraph,
+  updateRelationship,
 }: {
   proposal: Proposal;
   isSelected: boolean;
@@ -204,6 +211,8 @@ function ProposalRow({
     inversePredicate?: string,
   ) => Promise<void>;
   onReset: (id: string) => Promise<void>;
+  schemaGraph: SchemaGraph | null;
+  updateRelationship: (id: string, predicate: string, cardinality?: string) => Promise<void>;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -218,6 +227,24 @@ function ProposalRow({
 
   const isPending = p.status === "pending";
   const effectivePredicate = p.reviewedPredicate ?? p.suggestedPredicate;
+
+  // Find all actual relationships in the schema graph between these two entity types
+  const relatedEdges: { rel: Relationship; fromName: string; toName: string }[] = [];
+  if (schemaGraph && (p.status === "accepted" || p.status === "modified")) {
+    const fromType = schemaGraph.entityTypes.find((et) => et.entityType.name === p.fromEntity);
+    const toType = schemaGraph.entityTypes.find((et) => et.entityType.name === p.toEntity);
+    if (fromType && toType) {
+      const fromId = fromType.entityType.id;
+      const toId = toType.entityType.id;
+      for (const rel of schemaGraph.relationships) {
+        if (rel.sourceEntityTypeId === fromId && rel.targetEntityTypeId === toId) {
+          relatedEdges.push({ rel, fromName: p.fromEntity, toName: p.toEntity });
+        } else if (rel.sourceEntityTypeId === toId && rel.targetEntityTypeId === fromId) {
+          relatedEdges.push({ rel, fromName: p.toEntity, toName: p.fromEntity });
+        }
+      }
+    }
+  }
 
   const reversed = direction === "reverse";
   const inversePredicate = direction === "both" ? editInversePredicate : undefined;
@@ -374,6 +401,27 @@ function ProposalRow({
             <ReasonSection key={i} reason={reason} showDivider={i > 0} />
           ))}
 
+          {/* Rename relationships — shown for accepted / modified proposals */}
+          {(p.status === "accepted" || p.status === "modified") && relatedEdges.length > 0 && (
+            <div className="flex flex-col gap-2 border-t border-border/50 pt-3">
+              <span className="text-[10px] text-muted-foreground font-medium">Rename relationships</span>
+              {relatedEdges.map(({ rel, fromName, toName }) => (
+                <RelationshipRenameRow
+                  key={rel.id}
+                  rel={rel}
+                  fromName={fromName}
+                  toName={toName}
+                  onUpdate={updateRelationship}
+                />
+              ))}
+            </div>
+          )}
+          {(p.status === "accepted" || p.status === "modified") && relatedEdges.length === 0 && schemaGraph && (
+            <div className="border-t border-border/50 pt-3">
+              <p className="text-[10px] text-muted-foreground">No relationships found in schema graph for this proposal.</p>
+            </div>
+          )}
+
           {/* Edit + action row */}
           {isPending && (
             <div className="flex flex-col gap-3 border-t border-border/50 pt-3">
@@ -501,6 +549,59 @@ function ProposalRow({
         </div>
       )}
     </li>
+  );
+}
+
+// ── RelationshipRenameRow ──────────────────────────────────────────────────────
+
+function RelationshipRenameRow({
+  rel,
+  fromName,
+  toName,
+  onUpdate,
+}: {
+  rel: Relationship;
+  fromName: string;
+  toName: string;
+  onUpdate: (id: string, predicate: string) => Promise<void>;
+}) {
+  const [value, setValue] = useState(rel.predicate);
+  const [busy, setBusy] = useState(false);
+
+  async function save() {
+    const trimmed = value.trim();
+    if (!trimmed || trimmed === rel.predicate) return;
+    setBusy(true);
+    try {
+      await onUpdate(rel.id, trimmed);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="flex items-end gap-2">
+      <div className="flex flex-col gap-1 min-w-0">
+        <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+          <span className="font-mono">{fromName}</span>
+          <ArrowRight size={9} className="shrink-0" />
+          <span className="font-mono">{toName}</span>
+        </div>
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") void save(); }}
+          className="h-7 rounded border border-border bg-background px-2 font-mono text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+        />
+      </div>
+      <ActionButton
+        label={busy ? "Saving…" : "Save"}
+        variant="accept"
+        busy={busy || value.trim() === rel.predicate || !value.trim()}
+        onClick={save}
+      />
+    </div>
   );
 }
 

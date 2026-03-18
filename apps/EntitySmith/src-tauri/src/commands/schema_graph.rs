@@ -350,3 +350,83 @@ pub fn reset_proposal(
 
     Ok(())
 }
+
+// ── Rename Proposal Relationship ──────────────────────────────────────────────
+
+/// Rename the schema-graph relationship that was created when this proposal was
+/// accepted.  Looks up the relationship by matching the entity-type names from
+/// the proposal against the current schema graph, then updates both the
+/// relationship predicate and the proposal's reviewed_predicate so the two stay
+/// in sync.
+#[tauri::command]
+pub fn rename_proposal_relationship(
+    proposal_id: String,
+    new_predicate: String,
+    state: State<'_, AppState>,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    let guard = state
+        .project
+        .lock()
+        .map_err(|_| "Project lock poisoned".to_string())?;
+    let store = guard.as_ref().ok_or("No project open")?;
+
+    // 1. Load the proposal.
+    let proposals = store.list_proposals(None)?;
+    let proposal = proposals
+        .iter()
+        .find(|p| p.id == proposal_id)
+        .ok_or_else(|| format!("Proposal '{proposal_id}' not found."))?;
+
+    let current_predicate = proposal
+        .reviewed_predicate
+        .as_deref()
+        .unwrap_or(&proposal.suggested_predicate);
+
+    // 2. Resolve entity-type IDs from the proposal's entity names.
+    let entity_types = store.list_entity_types()?;
+    let from_et = entity_types
+        .iter()
+        .find(|et| et.name == proposal.from_entity)
+        .ok_or_else(|| format!("Entity type '{}' not found in schema graph.", proposal.from_entity))?;
+    let to_et = entity_types
+        .iter()
+        .find(|et| et.name == proposal.to_entity)
+        .ok_or_else(|| format!("Entity type '{}' not found in schema graph.", proposal.to_entity))?;
+
+    // 3. Find the relationship created during promotion.
+    let relationships = store.list_relationships()?;
+    let rel = relationships
+        .iter()
+        .find(|r| {
+            r.source_entity_type_id == from_et.id
+                && r.target_entity_type_id == to_et.id
+                && r.predicate == current_predicate
+        })
+        .ok_or_else(|| {
+            "Relationship not found — it may have already been renamed or deleted \
+             via the schema graph canvas."
+                .to_string()
+        })?;
+
+    // 4. Update the relationship predicate.
+    store.update_relationship(&rel.id, &new_predicate, rel.cardinality.as_deref())?;
+
+    // 5. Keep the proposal's reviewed_predicate in sync (status → modified).
+    store.review_proposal(
+        &proposal_id,
+        "modify",
+        Some(new_predicate.as_str()),
+        proposal.reviewed_cardinality.as_deref(),
+    )?;
+
+    drop(guard);
+    app_handle
+        .emit("schema:updated", &())
+        .map_err(|e| format!("Emit schema:updated failed: {e}"))?;
+    app_handle
+        .emit("proposals:updated", &())
+        .map_err(|e| format!("Emit proposals:updated failed: {e}"))?;
+
+    Ok(())
+}

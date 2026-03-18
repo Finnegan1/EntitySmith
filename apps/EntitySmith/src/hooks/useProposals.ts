@@ -19,6 +19,7 @@ interface UseProposalsReturn {
     inversePredicate?: string,
   ) => Promise<void>;
   resetProposal: (proposalId: string) => Promise<void>;
+  renameProposalRelationship: (proposalId: string, newPredicate: string) => Promise<void>;
   reload: () => Promise<void>;
   clearError: () => void;
 }
@@ -126,6 +127,17 @@ export function useProposals(
     [],
   );
 
+  const renameProposalRelationship = useCallback(
+    async (proposalId: string, newPredicate: string) => {
+      try {
+        await invoke("rename_proposal_relationship", { proposalId, newPredicate });
+      } catch (e) {
+        setError(String(e));
+      }
+    },
+    [],
+  );
+
   const resetProposal = useCallback(async (proposalId: string) => {
     try {
       await invoke("reset_proposal", { proposalId });
@@ -148,6 +160,7 @@ export function useProposals(
     generateProposals,
     reviewProposal,
     resetProposal,
+    renameProposalRelationship,
     reload: load,
     clearError,
   };

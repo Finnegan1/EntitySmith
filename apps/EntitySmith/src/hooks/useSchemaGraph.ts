@@ -32,8 +32,9 @@ export function useSchemaGraph() {
     }
   }, []);
 
-  // Listen for schema:updated events
+  // Load on mount and listen for schema:updated events
   useEffect(() => {
+    loadSchemaGraph();
     const unlisten = listen("schema:updated", () => loadSchemaGraph());
     return () => {
       unlisten.then((fn) => fn());
