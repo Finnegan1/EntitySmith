@@ -227,6 +227,8 @@ pub struct EntityType {
     pub name: String,
     pub label: Option<String>,
     pub description: Option<String>,
+    pub rdf_class: Option<String>,
+    pub subject_column: Option<String>,
     pub created_at: String,
 }
 
@@ -503,4 +505,122 @@ pub enum ConflictPolicy {
     PreferNonNull,
     PreferMostRecent,
     KeepBoth,
+}
+
+// ── Consolidation (Phase 7 / Stage 4) ────────────────────────────────────────
+
+/// Type of consolidation decision.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConsolidationDecisionType {
+    Merge,
+    Link,
+    Subtype,
+    KeepSeparate,
+}
+
+impl ConsolidationDecisionType {
+    pub fn to_db_str(&self) -> &'static str {
+        match self {
+            Self::Merge => "merge",
+            Self::Link => "link",
+            Self::Subtype => "subtype",
+            Self::KeepSeparate => "keep_separate",
+        }
+    }
+    pub fn from_db_str(s: &str) -> Self {
+        match s {
+            "merge" => Self::Merge,
+            "link" => Self::Link,
+            "subtype" => Self::Subtype,
+            _ => Self::KeepSeparate,
+        }
+    }
+}
+
+/// A consolidation decision: merge, link, subtype, or keep-separate for a pair
+/// of source entities.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConsolidationDecision {
+    pub id: EntityId,
+    pub project_id: EntityId,
+    pub decision_type: ConsolidationDecisionType,
+    pub entity_a_source_id: EntityId,
+    pub entity_a_name: String,
+    pub entity_b_source_id: EntityId,
+    pub entity_b_name: String,
+    pub result_entity_type_id: Option<EntityId>,
+    pub result_relationship_id: Option<EntityId>,
+    pub parent_entity_type_id: Option<EntityId>,
+    pub child_entity_type_id: Option<EntityId>,
+    pub config: serde_json::Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// A pairwise similarity score between two source entities.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EntitySimilarityPair {
+    pub id: EntityId,
+    pub project_id: EntityId,
+    pub entity_a_source_id: EntityId,
+    pub entity_a_name: String,
+    pub entity_b_source_id: EntityId,
+    pub entity_b_name: String,
+    pub similarity_score: f64,
+    pub scoring_details: serde_json::Value,
+    pub status: String,
+    pub created_at: String,
+}
+
+/// Per-entity-type attribute mapping: source column → canonical name → RDF predicate.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AttributeMapping {
+    pub id: EntityId,
+    pub entity_type_id: EntityId,
+    pub source_id: EntityId,
+    pub source_column: String,
+    pub canonical_name: String,
+    pub rdf_predicate: Option<String>,
+    pub xsd_datatype: Option<String>,
+    pub is_omitted: bool,
+    pub sort_order: i32,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// How two attributes from different source entities align.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AttributeMatchType {
+    Exact,
+    Inferred,
+    UnmatchedA,
+    UnmatchedB,
+}
+
+/// A single alignment row in the comparison panel.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AttributeAlignment {
+    pub source_a_column: Option<String>,
+    pub source_a_type: Option<String>,
+    pub source_b_column: Option<String>,
+    pub source_b_type: Option<String>,
+    pub match_type: AttributeMatchType,
+    pub confidence: f64,
+}
+
+/// Full comparison data for the side-by-side panel.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EntityComparisonData {
+    pub entity_a: EntityWithAttributes,
+    pub entity_b: EntityWithAttributes,
+    pub attribute_alignments: Vec<AttributeAlignment>,
+    pub similarity_score: f64,
+    pub scoring_details: serde_json::Value,
 }

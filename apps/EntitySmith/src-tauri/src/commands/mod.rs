@@ -1,3 +1,5 @@
+pub mod attribute_mapping;
+pub mod consolidation;
 pub mod jobs;
 pub mod profiling;
 pub mod project;

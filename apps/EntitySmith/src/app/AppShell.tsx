@@ -6,6 +6,7 @@ import { DetailsPanel } from "./DetailsPanel";
 import { StatusBar } from "./StatusBar";
 import { NewProjectModal } from "./NewProjectModal";
 import { useProject } from "@/hooks/useProject";
+import { useSchemaGraph } from "@/hooks/useSchemaGraph";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import type { AppView, EntityTypeWithBindings, Proposal, SourceDescriptor } from "@/types";
 
@@ -19,6 +20,7 @@ export function AppShell() {
 
   const { project, isLoading, error, clearError, createProject, openProject } =
     useProject();
+  const { schemaGraph } = useSchemaGraph();
 
   // Close the new-project modal once a project has been successfully created.
   useEffect(() => {
@@ -74,6 +76,7 @@ export function AppShell() {
             onProposalSelect={setSelectedProposal}
             selectedEntityTypeId={selectedEntityType?.entityType.id ?? null}
             onEntityTypeSelect={setSelectedEntityType}
+            schemaGraph={schemaGraph}
           />
         </main>
 

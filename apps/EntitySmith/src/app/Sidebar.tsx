@@ -42,6 +42,13 @@ const NAV_ITEMS: NavItem[] = [
     tip: "Review connection proposals generated from your sources. The analysis engine detects foreign keys, column-name patterns, and shared sample values to suggest relationships between entities. Accept, modify, or reject each proposal.",
   },
   {
+    view: "consolidation",
+    label: "Consolidation",
+    icon: <Layers size={16} />,
+    group: "main",
+    tip: "Identify and resolve similar entities across sources. Merge duplicates, link related entities, define subtype hierarchies, or keep them separate. Map source attributes to canonical RDF predicates.",
+  },
+  {
     view: "identity",
     label: "Identity",
     icon: <Link size={16} />,

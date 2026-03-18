@@ -104,6 +104,8 @@ export interface EntityType {
   name: string;
   label?: string;
   description?: string;
+  rdfClass?: string;
+  subjectColumn?: string;
   createdAt: string;
 }
 
@@ -266,6 +268,74 @@ export type AppView =
   | "sources"
   | "schema-graph"
   | "proposals"
+  | "consolidation"
   | "identity"
   | "export"
   | "settings";
+
+// ── Consolidation (Phase 7 / Stage 4) ────────────────────────────────────────
+
+export type ConsolidationDecisionType = "merge" | "link" | "subtype" | "keep_separate";
+
+export interface ConsolidationDecision {
+  id: EntityId;
+  projectId: EntityId;
+  decisionType: ConsolidationDecisionType;
+  entityASourceId: EntityId;
+  entityAName: string;
+  entityBSourceId: EntityId;
+  entityBName: string;
+  resultEntityTypeId?: EntityId;
+  resultRelationshipId?: EntityId;
+  parentEntityTypeId?: EntityId;
+  childEntityTypeId?: EntityId;
+  config: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface EntitySimilarityPair {
+  id: EntityId;
+  projectId: EntityId;
+  entityASourceId: EntityId;
+  entityAName: string;
+  entityBSourceId: EntityId;
+  entityBName: string;
+  similarityScore: number;
+  scoringDetails: Record<string, unknown>;
+  status: string;
+  createdAt: string;
+}
+
+export type AttributeMatchType = "exact" | "inferred" | "unmatched_a" | "unmatched_b";
+
+export interface AttributeAlignment {
+  sourceAColumn?: string;
+  sourceAType?: string;
+  sourceBColumn?: string;
+  sourceBType?: string;
+  matchType: AttributeMatchType;
+  confidence: number;
+}
+
+export interface EntityComparisonData {
+  entityA: EntityWithAttributes;
+  entityB: EntityWithAttributes;
+  attributeAlignments: AttributeAlignment[];
+  similarityScore: number;
+  scoringDetails: Record<string, unknown>;
+}
+
+export interface AttributeMapping {
+  id: EntityId;
+  entityTypeId: EntityId;
+  sourceId: EntityId;
+  sourceColumn: string;
+  canonicalName: string;
+  rdfPredicate?: string;
+  xsdDatatype?: string;
+  isOmitted: boolean;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}

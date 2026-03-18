@@ -5,6 +5,9 @@ use rusqlite::{Connection, OptionalExtension, params};
 use uuid::Uuid;
 
 use crate::domain::{
+    AttributeAlignment, AttributeMapping, AttributeMatchType,
+    ConsolidationDecision, ConsolidationDecisionType,
+    EntityComparisonData, EntitySimilarityPair,
     EntitySourceBinding, EntityType, EntityTypeWithBindings,
     EntityWithAttributes, FkCandidate, FullSourceProfile, ProjectState, Proposal,
     ProposalKind, ProposalReason, ProposalStatus, ProposalOrigin,
@@ -218,7 +221,68 @@ CREATE INDEX IF NOT EXISTS proposals_project_id ON proposals(project_id);
 CREATE INDEX IF NOT EXISTS proposals_status ON proposals(status);
 ";
 
-const CURRENT_SCHEMA_VERSION: u32 = 6;
+const SCHEMA_V7: &str = "
+-- Pairwise similarity scores between source entities (Stage 4).
+CREATE TABLE IF NOT EXISTS entity_similarity_pairs (
+    id                 TEXT PRIMARY KEY NOT NULL,
+    project_id         TEXT NOT NULL REFERENCES project(id) ON DELETE CASCADE,
+    entity_a_source_id TEXT NOT NULL,
+    entity_a_name      TEXT NOT NULL,
+    entity_b_source_id TEXT NOT NULL,
+    entity_b_name      TEXT NOT NULL,
+    similarity_score   REAL NOT NULL,
+    scoring_details    TEXT NOT NULL DEFAULT '{}',
+    status             TEXT NOT NULL DEFAULT 'pending',
+    created_at         TEXT NOT NULL,
+    UNIQUE(project_id, entity_a_source_id, entity_a_name, entity_b_source_id, entity_b_name)
+);
+CREATE INDEX IF NOT EXISTS entity_similarity_project ON entity_similarity_pairs(project_id);
+
+-- Consolidation decisions: merge / link / subtype / keep_separate.
+CREATE TABLE IF NOT EXISTS consolidation_decisions (
+    id                      TEXT PRIMARY KEY NOT NULL,
+    project_id              TEXT NOT NULL REFERENCES project(id) ON DELETE CASCADE,
+    decision_type           TEXT NOT NULL,
+    entity_a_source_id      TEXT NOT NULL,
+    entity_a_name           TEXT NOT NULL,
+    entity_b_source_id      TEXT NOT NULL,
+    entity_b_name           TEXT NOT NULL,
+    result_entity_type_id   TEXT,
+    result_relationship_id  TEXT,
+    parent_entity_type_id   TEXT,
+    child_entity_type_id    TEXT,
+    config                  TEXT NOT NULL DEFAULT '{}',
+    created_at              TEXT NOT NULL,
+    updated_at              TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS consolidation_decisions_project ON consolidation_decisions(project_id);
+
+-- Per-entity-type attribute mappings (source columns → RDF predicates).
+CREATE TABLE IF NOT EXISTS attribute_mappings (
+    id              TEXT PRIMARY KEY NOT NULL,
+    entity_type_id  TEXT NOT NULL REFERENCES entity_types(id) ON DELETE CASCADE,
+    source_id       TEXT NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+    source_column   TEXT NOT NULL,
+    canonical_name  TEXT NOT NULL,
+    rdf_predicate   TEXT,
+    xsd_datatype    TEXT,
+    is_omitted      INTEGER NOT NULL DEFAULT 0,
+    sort_order      INTEGER NOT NULL DEFAULT 0,
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL,
+    UNIQUE(entity_type_id, source_id, source_column)
+);
+CREATE INDEX IF NOT EXISTS attribute_mappings_entity_type ON attribute_mappings(entity_type_id);
+";
+
+// V7 also needs to add columns to entity_types.
+// SQLite ALTER TABLE only supports ADD COLUMN one at a time; we use a helper.
+const SCHEMA_V7_ALTER: &str = "
+ALTER TABLE entity_types ADD COLUMN rdf_class TEXT;
+ALTER TABLE entity_types ADD COLUMN subject_column TEXT;
+";
+
+const CURRENT_SCHEMA_VERSION: u32 = 7;
 
 // ── ProjectStore ──────────────────────────────────────────────────────────────
 
@@ -1053,6 +1117,8 @@ impl ProjectStore {
             name: name.to_string(),
             label: label.map(|s| s.to_string()),
             description: description.map(|s| s.to_string()),
+            rdf_class: None,
+            subject_column: None,
             created_at: now,
         })
     }
@@ -1075,7 +1141,7 @@ impl ProjectStore {
 
         let mut stmt = self.conn
             .prepare(
-                "SELECT id, project_id, name, label, description, created_at
+                "SELECT id, project_id, name, label, description, rdf_class, subject_column, created_at
                  FROM entity_types WHERE project_id = ?1 ORDER BY name ASC",
             )
             .map_err(|e| format!("Failed to prepare entity_types query: {e}"))?;
@@ -1088,7 +1154,9 @@ impl ProjectStore {
                     name: row.get(2)?,
                     label: row.get(3)?,
                     description: row.get(4)?,
-                    created_at: row.get(5)?,
+                    rdf_class: row.get(5)?,
+                    subject_column: row.get(6)?,
+                    created_at: row.get(7)?,
                 })
             })
             .map_err(|e| format!("Failed to query entity_types: {e}"))?
@@ -1379,6 +1447,1035 @@ impl ProjectStore {
         Ok(rows)
     }
 
+    // ── Consolidation (Phase 7 / Stage 4) ───────────────────────────────────
+
+    /// Compute and persist pairwise similarity between all source entities.
+    /// Returns the resulting pairs (score > threshold).
+    pub fn compute_entity_similarities(&self) -> Result<Vec<EntitySimilarityPair>, String> {
+        let project = self.get_project_state()?;
+        let now = Utc::now().to_rfc3339();
+
+        // Load all source entities with their attributes.
+        let entities = self.list_all_entities_with_attributes()?;
+
+        // Clear old similarity pairs (recompute fresh).
+        self.conn
+            .execute(
+                "DELETE FROM entity_similarity_pairs WHERE project_id = ?1",
+                params![project.id],
+            )
+            .map_err(|e| format!("Failed to clear similarity pairs: {e}"))?;
+
+        let mut pairs = Vec::new();
+        let threshold = 0.3;
+
+        for i in 0..entities.len() {
+            for j in (i + 1)..entities.len() {
+                let (ref ea, ref sa_id) = entities[i];
+                let (ref eb, ref sb_id) = entities[j];
+
+                let (score, details) = Self::compute_similarity_score(ea, eb);
+
+                if score >= threshold {
+                    let id = Uuid::new_v4().to_string();
+                    self.conn
+                        .execute(
+                            "INSERT OR REPLACE INTO entity_similarity_pairs
+                             (id, project_id, entity_a_source_id, entity_a_name,
+                              entity_b_source_id, entity_b_name,
+                              similarity_score, scoring_details, status, created_at)
+                             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'pending', ?9)",
+                            params![
+                                id, project.id,
+                                sa_id, ea.profile.name,
+                                sb_id, eb.profile.name,
+                                score, serde_json::to_string(&details).unwrap_or_default(),
+                                now
+                            ],
+                        )
+                        .map_err(|e| format!("Failed to insert similarity pair: {e}"))?;
+
+                    pairs.push(EntitySimilarityPair {
+                        id,
+                        project_id: project.id.clone(),
+                        entity_a_source_id: sa_id.clone(),
+                        entity_a_name: ea.profile.name.clone(),
+                        entity_b_source_id: sb_id.clone(),
+                        entity_b_name: eb.profile.name.clone(),
+                        similarity_score: score,
+                        scoring_details: details,
+                        status: "pending".to_string(),
+                        created_at: now.clone(),
+                    });
+                }
+            }
+        }
+
+        Ok(pairs)
+    }
+
+    /// List all source entities (across all sources) with their attributes.
+    /// Returns (EntityWithAttributes, source_id) tuples.
+    fn list_all_entities_with_attributes(&self) -> Result<Vec<(EntityWithAttributes, String)>, String> {
+        let project_id = self.get_project_state()?.id;
+
+        let mut stmt = self.conn
+            .prepare(
+                "SELECT se.id, se.source_id, se.name, se.row_count
+                 FROM source_entities se
+                 JOIN sources s ON se.source_id = s.id
+                 WHERE s.project_id = ?1",
+            )
+            .map_err(|e| format!("Failed to prepare entities query: {e}"))?;
+
+        let entity_rows: Vec<(String, String, String, i64)> = stmt
+            .query_map(params![project_id], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, i64>(3)?,
+                ))
+            })
+            .map_err(|e| format!("Failed to query entities: {e}"))?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        let mut results = Vec::new();
+        for (entity_id, source_id, name, row_count) in entity_rows {
+            let attributes = self.load_attributes_for_entity(&entity_id)?;
+            results.push((
+                EntityWithAttributes {
+                    profile: SourceEntityProfile {
+                        source_id: source_id.clone(),
+                        name,
+                        row_count,
+                    },
+                    attributes,
+                },
+                source_id,
+            ));
+        }
+
+        Ok(results)
+    }
+
+    /// Load attributes for a given source entity (by entity_id).
+    fn load_attributes_for_entity(&self, entity_id: &str) -> Result<Vec<SourceAttributeProfile>, String> {
+        let mut stmt = self.conn
+            .prepare(
+                "SELECT name, inferred_type, is_nullable, is_pk, null_pct, unique_pct,
+                        min_value, max_value, top_values
+                 FROM source_attributes WHERE entity_id = ?1 ORDER BY name ASC",
+            )
+            .map_err(|e| format!("Failed to prepare attributes query: {e}"))?;
+
+        let attrs: Vec<SourceAttributeProfile> = stmt
+            .query_map(params![entity_id], |row| {
+                let top_str: String = row.get(8)?;
+                let top: Vec<TopValue> =
+                    serde_json::from_str(&top_str).unwrap_or_default();
+                Ok(SourceAttributeProfile {
+                    name: row.get(0)?,
+                    inferred_type: row.get(1)?,
+                    is_nullable: row.get::<_, bool>(2)?,
+                    is_pk: row.get::<_, bool>(3)?,
+                    null_pct: row.get(4)?,
+                    unique_pct: row.get(5)?,
+                    min_value: row.get(6)?,
+                    max_value: row.get(7)?,
+                    top_values: top,
+                })
+            })
+            .map_err(|e| format!("Failed to query attributes: {e}"))?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        Ok(attrs)
+    }
+
+    /// Compute a similarity score between two entities based on attribute overlap.
+    fn compute_similarity_score(
+        a: &EntityWithAttributes,
+        b: &EntityWithAttributes,
+    ) -> (f64, serde_json::Value) {
+        use strsim::jaro_winkler;
+
+        let attrs_a = &a.attributes;
+        let attrs_b = &b.attributes;
+
+        if attrs_a.is_empty() || attrs_b.is_empty() {
+            return (0.0, serde_json::json!({"reason": "empty attributes"}));
+        }
+
+        // Greedy bipartite matching on column name similarity.
+        let mut used_b = vec![false; attrs_b.len()];
+        let mut matched = 0usize;
+        let mut name_score_sum = 0.0_f64;
+        let mut type_matches = 0usize;
+
+        for attr_a in attrs_a {
+            let mut best_j = None;
+            let mut best_sim = 0.0_f64;
+            for (j, attr_b) in attrs_b.iter().enumerate() {
+                if used_b[j] {
+                    continue;
+                }
+                let sim = jaro_winkler(&attr_a.name.to_lowercase(), &attr_b.name.to_lowercase());
+                if sim > best_sim {
+                    best_sim = sim;
+                    best_j = Some(j);
+                }
+            }
+            if let Some(j) = best_j {
+                if best_sim >= 0.80 {
+                    used_b[j] = true;
+                    matched += 1;
+                    name_score_sum += best_sim;
+                    if attrs_a.get(0).map(|_| &attr_a.inferred_type) == attrs_b.get(j).map(|ab| &ab.inferred_type) {
+                        type_matches += 1;
+                    }
+                }
+            }
+        }
+
+        let total_attrs = (attrs_a.len() + attrs_b.len()) as f64 / 2.0;
+        let coverage = matched as f64 / total_attrs;
+        let avg_name_sim = if matched > 0 { name_score_sum / matched as f64 } else { 0.0 };
+        let type_bonus = if matched > 0 { (type_matches as f64 / matched as f64) * 0.1 } else { 0.0 };
+
+        // Entity name similarity bonus.
+        let entity_name_sim = jaro_winkler(&a.profile.name.to_lowercase(), &b.profile.name.to_lowercase());
+        let entity_name_bonus = if entity_name_sim > 0.80 { (entity_name_sim - 0.80) * 1.0 } else { 0.0 };
+
+        let score = (coverage * 0.5 + avg_name_sim * 0.3 + type_bonus + entity_name_bonus).min(1.0);
+
+        let details = serde_json::json!({
+            "matched_columns": matched,
+            "total_a": attrs_a.len(),
+            "total_b": attrs_b.len(),
+            "avg_name_similarity": avg_name_sim,
+            "coverage": coverage,
+            "type_matches": type_matches,
+            "entity_name_similarity": entity_name_sim,
+        });
+
+        (score, details)
+    }
+
+    /// List similarity pairs, optionally filtered by status.
+    pub fn list_entity_similarity_pairs(
+        &self,
+        status_filter: Option<&str>,
+    ) -> Result<Vec<EntitySimilarityPair>, String> {
+        let project_id = self.get_project_state()?.id;
+
+        let (sql, params_vec): (String, Vec<Box<dyn rusqlite::types::ToSql>>) = match status_filter {
+            Some(status) => (
+                "SELECT id, project_id, entity_a_source_id, entity_a_name,
+                        entity_b_source_id, entity_b_name,
+                        similarity_score, scoring_details, status, created_at
+                 FROM entity_similarity_pairs
+                 WHERE project_id = ?1 AND status = ?2
+                 ORDER BY similarity_score DESC".to_string(),
+                vec![Box::new(project_id.clone()), Box::new(status.to_string())],
+            ),
+            None => (
+                "SELECT id, project_id, entity_a_source_id, entity_a_name,
+                        entity_b_source_id, entity_b_name,
+                        similarity_score, scoring_details, status, created_at
+                 FROM entity_similarity_pairs
+                 WHERE project_id = ?1
+                 ORDER BY similarity_score DESC".to_string(),
+                vec![Box::new(project_id.clone())],
+            ),
+        };
+
+        let mut stmt = self.conn
+            .prepare(&sql)
+            .map_err(|e| format!("Failed to prepare similarity query: {e}"))?;
+
+        let params_refs: Vec<&dyn rusqlite::types::ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
+
+        let rows: Vec<EntitySimilarityPair> = stmt
+            .query_map(params_refs.as_slice(), |row| {
+                let details_str: String = row.get(7)?;
+                Ok(EntitySimilarityPair {
+                    id: row.get(0)?,
+                    project_id: row.get(1)?,
+                    entity_a_source_id: row.get(2)?,
+                    entity_a_name: row.get(3)?,
+                    entity_b_source_id: row.get(4)?,
+                    entity_b_name: row.get(5)?,
+                    similarity_score: row.get(6)?,
+                    scoring_details: serde_json::from_str(&details_str).unwrap_or(serde_json::json!({})),
+                    status: row.get(8)?,
+                    created_at: row.get(9)?,
+                })
+            })
+            .map_err(|e| format!("Failed to query similarity pairs: {e}"))?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        Ok(rows)
+    }
+
+    /// Get comparison data for two source entities (attribute alignment + profiles).
+    pub fn get_entity_comparison(
+        &self,
+        entity_a_source_id: &str,
+        entity_a_name: &str,
+        entity_b_source_id: &str,
+        entity_b_name: &str,
+    ) -> Result<EntityComparisonData, String> {
+        // Load entity A profile.
+        let entity_a = self.load_entity_with_attributes(entity_a_source_id, entity_a_name)?;
+        // Load entity B profile.
+        let entity_b = self.load_entity_with_attributes(entity_b_source_id, entity_b_name)?;
+
+        // Compute attribute alignment.
+        let alignments = Self::compute_attribute_alignment(&entity_a, &entity_b);
+
+        // Compute similarity score.
+        let (score, details) = Self::compute_similarity_score(&entity_a, &entity_b);
+
+        Ok(EntityComparisonData {
+            entity_a,
+            entity_b,
+            attribute_alignments: alignments,
+            similarity_score: score,
+            scoring_details: details,
+        })
+    }
+
+    /// Load a single source entity with its attributes by source_id + entity name.
+    fn load_entity_with_attributes(
+        &self,
+        source_id: &str,
+        entity_name: &str,
+    ) -> Result<EntityWithAttributes, String> {
+        let (entity_id, row_count): (String, i64) = self.conn
+            .query_row(
+                "SELECT id, row_count FROM source_entities
+                 WHERE source_id = ?1 AND name = ?2",
+                params![source_id, entity_name],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .map_err(|e| format!("Source entity '{entity_name}' not found in source '{source_id}': {e}"))?;
+
+        let attributes = self.load_attributes_for_entity(&entity_id)?;
+
+        Ok(EntityWithAttributes {
+            profile: SourceEntityProfile {
+                source_id: source_id.to_string(),
+                name: entity_name.to_string(),
+                row_count,
+            },
+            attributes,
+        })
+    }
+
+    /// Compute attribute alignment between two entities using greedy bipartite matching.
+    fn compute_attribute_alignment(
+        a: &EntityWithAttributes,
+        b: &EntityWithAttributes,
+    ) -> Vec<AttributeAlignment> {
+        use strsim::jaro_winkler;
+
+        let attrs_a = &a.attributes;
+        let attrs_b = &b.attributes;
+        let mut used_b = vec![false; attrs_b.len()];
+        let mut alignments = Vec::new();
+
+        // Greedy matching: for each A attribute, find best unmatched B attribute.
+        for attr_a in attrs_a {
+            let mut best_j = None;
+            let mut best_sim = 0.0_f64;
+
+            for (j, attr_b) in attrs_b.iter().enumerate() {
+                if used_b[j] {
+                    continue;
+                }
+                let norm_a = attr_a.name.to_lowercase().replace(['_', '-'], "");
+                let norm_b = attr_b.name.to_lowercase().replace(['_', '-'], "");
+
+                let sim = if norm_a == norm_b {
+                    1.0
+                } else {
+                    jaro_winkler(&norm_a, &norm_b)
+                };
+
+                if sim > best_sim {
+                    best_sim = sim;
+                    best_j = Some(j);
+                }
+            }
+
+            if let Some(j) = best_j {
+                if best_sim >= 0.80 {
+                    used_b[j] = true;
+                    let match_type = if best_sim >= 0.98 {
+                        AttributeMatchType::Exact
+                    } else {
+                        AttributeMatchType::Inferred
+                    };
+                    alignments.push(AttributeAlignment {
+                        source_a_column: Some(attr_a.name.clone()),
+                        source_a_type: Some(attr_a.inferred_type.clone()),
+                        source_b_column: Some(attrs_b[j].name.clone()),
+                        source_b_type: Some(attrs_b[j].inferred_type.clone()),
+                        match_type,
+                        confidence: best_sim,
+                    });
+                } else {
+                    // Below threshold: unmatched A.
+                    alignments.push(AttributeAlignment {
+                        source_a_column: Some(attr_a.name.clone()),
+                        source_a_type: Some(attr_a.inferred_type.clone()),
+                        source_b_column: None,
+                        source_b_type: None,
+                        match_type: AttributeMatchType::UnmatchedA,
+                        confidence: 0.0,
+                    });
+                }
+            } else {
+                alignments.push(AttributeAlignment {
+                    source_a_column: Some(attr_a.name.clone()),
+                    source_a_type: Some(attr_a.inferred_type.clone()),
+                    source_b_column: None,
+                    source_b_type: None,
+                    match_type: AttributeMatchType::UnmatchedA,
+                    confidence: 0.0,
+                });
+            }
+        }
+
+        // Add unmatched B columns.
+        for (j, attr_b) in attrs_b.iter().enumerate() {
+            if !used_b[j] {
+                alignments.push(AttributeAlignment {
+                    source_a_column: None,
+                    source_a_type: None,
+                    source_b_column: Some(attr_b.name.clone()),
+                    source_b_type: Some(attr_b.inferred_type.clone()),
+                    match_type: AttributeMatchType::UnmatchedB,
+                    confidence: 0.0,
+                });
+            }
+        }
+
+        alignments
+    }
+
+    /// Execute a merge consolidation decision.
+    pub fn execute_merge(
+        &self,
+        canonical_name: &str,
+        entity_a_source_id: &str,
+        entity_a_name: &str,
+        entity_b_source_id: &str,
+        entity_b_name: &str,
+        attribute_mapping_config: serde_json::Value,
+    ) -> Result<ConsolidationDecision, String> {
+        let project_id = self.get_project_state()?.id;
+        let now = Utc::now().to_rfc3339();
+
+        // Create or reuse canonical entity type.
+        let entity_type = match self.find_entity_type_by_name(canonical_name)? {
+            Some(et) => et,
+            None => self.create_entity_type(canonical_name, None, None)?,
+        };
+
+        // Bind both source entities (idempotent).
+        let _ = self.bind_source_entity(&entity_type.id, entity_a_source_id, entity_a_name);
+        let _ = self.bind_source_entity(&entity_type.id, entity_b_source_id, entity_b_name);
+
+        // Remap relationships from any old entity types bound to these source entities.
+        let remapped = self.remap_relationships_for_merge(&entity_type.id, entity_a_source_id, entity_a_name, entity_b_source_id, entity_b_name)?;
+
+        // Mark similarity pair as resolved.
+        self.conn
+            .execute(
+                "UPDATE entity_similarity_pairs SET status = 'resolved'
+                 WHERE project_id = ?1
+                   AND entity_a_source_id = ?2 AND entity_a_name = ?3
+                   AND entity_b_source_id = ?4 AND entity_b_name = ?5",
+                params![project_id, entity_a_source_id, entity_a_name, entity_b_source_id, entity_b_name],
+            )
+            .ok();
+
+        // Store consolidation decision.
+        let decision_id = Uuid::new_v4().to_string();
+        let config = serde_json::json!({
+            "attribute_mapping": attribute_mapping_config,
+            "remapped_relationships": remapped,
+        });
+
+        self.conn
+            .execute(
+                "INSERT INTO consolidation_decisions
+                 (id, project_id, decision_type, entity_a_source_id, entity_a_name,
+                  entity_b_source_id, entity_b_name, result_entity_type_id, config,
+                  created_at, updated_at)
+                 VALUES (?1, ?2, 'merge', ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                params![
+                    decision_id, project_id,
+                    entity_a_source_id, entity_a_name,
+                    entity_b_source_id, entity_b_name,
+                    entity_type.id,
+                    serde_json::to_string(&config).unwrap_or_default(),
+                    now, now
+                ],
+            )
+            .map_err(|e| format!("Failed to store consolidation decision: {e}"))?;
+
+        self.log_change("execute_merge", "consolidation_decision", &decision_id, &serde_json::to_string(&config).unwrap_or_default(), "{}")?;
+
+        Ok(ConsolidationDecision {
+            id: decision_id,
+            project_id,
+            decision_type: ConsolidationDecisionType::Merge,
+            entity_a_source_id: entity_a_source_id.to_string(),
+            entity_a_name: entity_a_name.to_string(),
+            entity_b_source_id: entity_b_source_id.to_string(),
+            entity_b_name: entity_b_name.to_string(),
+            result_entity_type_id: Some(entity_type.id),
+            result_relationship_id: None,
+            parent_entity_type_id: None,
+            child_entity_type_id: None,
+            config,
+            created_at: now.clone(),
+            updated_at: now,
+        })
+    }
+
+    /// Find entity type by name for the current project.
+    fn find_entity_type_by_name(&self, name: &str) -> Result<Option<EntityType>, String> {
+        let project_id = self.get_project_state()?.id;
+        self.conn
+            .query_row(
+                "SELECT id, project_id, name, label, description, rdf_class, subject_column, created_at
+                 FROM entity_types WHERE project_id = ?1 AND name = ?2",
+                params![project_id, name],
+                |row| {
+                    Ok(EntityType {
+                        id: row.get(0)?,
+                        project_id: row.get(1)?,
+                        name: row.get(2)?,
+                        label: row.get(3)?,
+                        description: row.get(4)?,
+                        rdf_class: row.get(5)?,
+                        subject_column: row.get(6)?,
+                        created_at: row.get(7)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(|e| format!("Failed to find entity type: {e}"))
+    }
+
+    /// Remap relationships after a merge: any relationship whose source or target
+    /// entity type was bound to one of the merged source entities should point
+    /// to the new canonical type.
+    fn remap_relationships_for_merge(
+        &self,
+        canonical_entity_type_id: &str,
+        entity_a_source_id: &str,
+        entity_a_name: &str,
+        entity_b_source_id: &str,
+        entity_b_name: &str,
+    ) -> Result<serde_json::Value, String> {
+        // Find entity types bound to these source entities (excluding the canonical type).
+        let mut stmt = self.conn
+            .prepare(
+                "SELECT DISTINCT entity_type_id FROM entity_source_bindings
+                 WHERE (source_id = ?1 AND entity_name = ?2)
+                    OR (source_id = ?3 AND entity_name = ?4)",
+            )
+            .map_err(|e| format!("Failed to find bound entity types: {e}"))?;
+
+        let old_type_ids: Vec<String> = stmt
+            .query_map(
+                params![entity_a_source_id, entity_a_name, entity_b_source_id, entity_b_name],
+                |row| row.get(0),
+            )
+            .map_err(|e| format!("Failed to query bound entity types: {e}"))?
+            .filter_map(|r| r.ok())
+            .filter(|id: &String| id != canonical_entity_type_id)
+            .collect();
+
+        let mut remapped = Vec::new();
+
+        for old_id in &old_type_ids {
+            // Remap source side.
+            let n1 = self.conn
+                .execute(
+                    "UPDATE relationships SET source_entity_type_id = ?1
+                     WHERE source_entity_type_id = ?2",
+                    params![canonical_entity_type_id, old_id],
+                )
+                .unwrap_or(0);
+
+            // Remap target side.
+            let n2 = self.conn
+                .execute(
+                    "UPDATE relationships SET target_entity_type_id = ?1
+                     WHERE target_entity_type_id = ?2",
+                    params![canonical_entity_type_id, old_id],
+                )
+                .unwrap_or(0);
+
+            if n1 > 0 || n2 > 0 {
+                remapped.push(serde_json::json!({
+                    "old_entity_type_id": old_id,
+                    "source_side": n1,
+                    "target_side": n2,
+                }));
+            }
+        }
+
+        Ok(serde_json::json!(remapped))
+    }
+
+    /// Execute a link consolidation decision.
+    pub fn execute_link(
+        &self,
+        entity_a_source_id: &str,
+        entity_a_name: &str,
+        entity_b_source_id: &str,
+        entity_b_name: &str,
+        predicate: &str,
+        reversed: bool,
+    ) -> Result<ConsolidationDecision, String> {
+        let project_id = self.get_project_state()?.id;
+        let now = Utc::now().to_rfc3339();
+
+        // Ensure entity types exist for both.
+        let et_a = self.ensure_entity_type_for_source(entity_a_source_id, entity_a_name)?;
+        let et_b = self.ensure_entity_type_for_source(entity_b_source_id, entity_b_name)?;
+
+        // Create relationship.
+        let (source_id, target_id) = if reversed { (&et_b.id, &et_a.id) } else { (&et_a.id, &et_b.id) };
+        let rel = self.add_relationship(source_id, target_id, predicate, None)?;
+
+        // Mark pair resolved.
+        self.conn
+            .execute(
+                "UPDATE entity_similarity_pairs SET status = 'resolved'
+                 WHERE project_id = ?1
+                   AND entity_a_source_id = ?2 AND entity_a_name = ?3
+                   AND entity_b_source_id = ?4 AND entity_b_name = ?5",
+                params![project_id, entity_a_source_id, entity_a_name, entity_b_source_id, entity_b_name],
+            )
+            .ok();
+
+        let decision_id = Uuid::new_v4().to_string();
+        self.conn
+            .execute(
+                "INSERT INTO consolidation_decisions
+                 (id, project_id, decision_type, entity_a_source_id, entity_a_name,
+                  entity_b_source_id, entity_b_name, result_relationship_id,
+                  config, created_at, updated_at)
+                 VALUES (?1, ?2, 'link', ?3, ?4, ?5, ?6, ?7, '{}', ?8, ?9)",
+                params![
+                    decision_id, project_id,
+                    entity_a_source_id, entity_a_name,
+                    entity_b_source_id, entity_b_name,
+                    rel.id, now, now
+                ],
+            )
+            .map_err(|e| format!("Failed to store link decision: {e}"))?;
+
+        self.log_change("execute_link", "consolidation_decision", &decision_id, "{}", "{}")?;
+
+        Ok(ConsolidationDecision {
+            id: decision_id,
+            project_id,
+            decision_type: ConsolidationDecisionType::Link,
+            entity_a_source_id: entity_a_source_id.to_string(),
+            entity_a_name: entity_a_name.to_string(),
+            entity_b_source_id: entity_b_source_id.to_string(),
+            entity_b_name: entity_b_name.to_string(),
+            result_entity_type_id: None,
+            result_relationship_id: Some(rel.id),
+            parent_entity_type_id: None,
+            child_entity_type_id: None,
+            config: serde_json::json!({}),
+            created_at: now.clone(),
+            updated_at: now,
+        })
+    }
+
+    /// Execute a subtype consolidation decision.
+    pub fn execute_subtype(
+        &self,
+        parent_source_id: &str,
+        parent_entity_name: &str,
+        child_source_id: &str,
+        child_entity_name: &str,
+    ) -> Result<ConsolidationDecision, String> {
+        let project_id = self.get_project_state()?.id;
+        let now = Utc::now().to_rfc3339();
+
+        let parent_et = self.ensure_entity_type_for_source(parent_source_id, parent_entity_name)?;
+        let child_et = self.ensure_entity_type_for_source(child_source_id, child_entity_name)?;
+
+        let rel = self.add_relationship(&child_et.id, &parent_et.id, "rdfs:subClassOf", None)?;
+
+        // Mark pair resolved.
+        self.conn
+            .execute(
+                "UPDATE entity_similarity_pairs SET status = 'resolved'
+                 WHERE project_id = ?1
+                   AND ((entity_a_source_id = ?2 AND entity_a_name = ?3 AND entity_b_source_id = ?4 AND entity_b_name = ?5)
+                     OR (entity_a_source_id = ?4 AND entity_a_name = ?5 AND entity_b_source_id = ?2 AND entity_b_name = ?3))",
+                params![project_id, parent_source_id, parent_entity_name, child_source_id, child_entity_name],
+            )
+            .ok();
+
+        let decision_id = Uuid::new_v4().to_string();
+        self.conn
+            .execute(
+                "INSERT INTO consolidation_decisions
+                 (id, project_id, decision_type, entity_a_source_id, entity_a_name,
+                  entity_b_source_id, entity_b_name, result_relationship_id,
+                  parent_entity_type_id, child_entity_type_id,
+                  config, created_at, updated_at)
+                 VALUES (?1, ?2, 'subtype', ?3, ?4, ?5, ?6, ?7, ?8, ?9, '{}', ?10, ?11)",
+                params![
+                    decision_id, project_id,
+                    parent_source_id, parent_entity_name,
+                    child_source_id, child_entity_name,
+                    rel.id, parent_et.id, child_et.id, now, now
+                ],
+            )
+            .map_err(|e| format!("Failed to store subtype decision: {e}"))?;
+
+        self.log_change("execute_subtype", "consolidation_decision", &decision_id, "{}", "{}")?;
+
+        Ok(ConsolidationDecision {
+            id: decision_id,
+            project_id,
+            decision_type: ConsolidationDecisionType::Subtype,
+            entity_a_source_id: parent_source_id.to_string(),
+            entity_a_name: parent_entity_name.to_string(),
+            entity_b_source_id: child_source_id.to_string(),
+            entity_b_name: child_entity_name.to_string(),
+            result_entity_type_id: None,
+            result_relationship_id: Some(rel.id),
+            parent_entity_type_id: Some(parent_et.id),
+            child_entity_type_id: Some(child_et.id),
+            config: serde_json::json!({}),
+            created_at: now.clone(),
+            updated_at: now,
+        })
+    }
+
+    /// Execute a keep-separate consolidation decision.
+    pub fn execute_keep_separate(
+        &self,
+        entity_a_source_id: &str,
+        entity_a_name: &str,
+        entity_b_source_id: &str,
+        entity_b_name: &str,
+    ) -> Result<ConsolidationDecision, String> {
+        let project_id = self.get_project_state()?.id;
+        let now = Utc::now().to_rfc3339();
+
+        // Mark pair resolved.
+        self.conn
+            .execute(
+                "UPDATE entity_similarity_pairs SET status = 'resolved'
+                 WHERE project_id = ?1
+                   AND entity_a_source_id = ?2 AND entity_a_name = ?3
+                   AND entity_b_source_id = ?4 AND entity_b_name = ?5",
+                params![project_id, entity_a_source_id, entity_a_name, entity_b_source_id, entity_b_name],
+            )
+            .ok();
+
+        let decision_id = Uuid::new_v4().to_string();
+        self.conn
+            .execute(
+                "INSERT INTO consolidation_decisions
+                 (id, project_id, decision_type, entity_a_source_id, entity_a_name,
+                  entity_b_source_id, entity_b_name, config, created_at, updated_at)
+                 VALUES (?1, ?2, 'keep_separate', ?3, ?4, ?5, ?6, '{}', ?7, ?8)",
+                params![
+                    decision_id, project_id,
+                    entity_a_source_id, entity_a_name,
+                    entity_b_source_id, entity_b_name,
+                    now, now
+                ],
+            )
+            .map_err(|e| format!("Failed to store keep_separate decision: {e}"))?;
+
+        self.log_change("execute_keep_separate", "consolidation_decision", &decision_id, "{}", "{}")?;
+
+        Ok(ConsolidationDecision {
+            id: decision_id,
+            project_id,
+            decision_type: ConsolidationDecisionType::KeepSeparate,
+            entity_a_source_id: entity_a_source_id.to_string(),
+            entity_a_name: entity_a_name.to_string(),
+            entity_b_source_id: entity_b_source_id.to_string(),
+            entity_b_name: entity_b_name.to_string(),
+            result_entity_type_id: None,
+            result_relationship_id: None,
+            parent_entity_type_id: None,
+            child_entity_type_id: None,
+            config: serde_json::json!({}),
+            created_at: now.clone(),
+            updated_at: now,
+        })
+    }
+
+    /// Ensure a canonical entity type exists for a source entity, creating + binding if needed.
+    fn ensure_entity_type_for_source(
+        &self,
+        source_id: &str,
+        entity_name: &str,
+    ) -> Result<EntityType, String> {
+        // Check if already bound.
+        let existing: Option<String> = self.conn
+            .query_row(
+                "SELECT entity_type_id FROM entity_source_bindings
+                 WHERE source_id = ?1 AND entity_name = ?2 LIMIT 1",
+                params![source_id, entity_name],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| format!("Failed to check bindings: {e}"))?;
+
+        if let Some(et_id) = existing {
+            // Return existing entity type.
+            return self.conn
+                .query_row(
+                    "SELECT id, project_id, name, label, description, rdf_class, subject_column, created_at
+                     FROM entity_types WHERE id = ?1",
+                    params![et_id],
+                    |row| {
+                        Ok(EntityType {
+                            id: row.get(0)?,
+                            project_id: row.get(1)?,
+                            name: row.get(2)?,
+                            label: row.get(3)?,
+                            description: row.get(4)?,
+                            rdf_class: row.get(5)?,
+                            subject_column: row.get(6)?,
+                            created_at: row.get(7)?,
+                        })
+                    },
+                )
+                .map_err(|e| format!("Entity type not found: {e}"));
+        }
+
+        // Create new entity type with the source entity name and bind it.
+        let et = self.create_entity_type(entity_name, None, None)?;
+        self.bind_source_entity(&et.id, source_id, entity_name)?;
+        Ok(et)
+    }
+
+    /// List all consolidation decisions for the current project.
+    pub fn list_consolidation_decisions(&self) -> Result<Vec<ConsolidationDecision>, String> {
+        let project_id = self.get_project_state()?.id;
+
+        let mut stmt = self.conn
+            .prepare(
+                "SELECT id, project_id, decision_type, entity_a_source_id, entity_a_name,
+                        entity_b_source_id, entity_b_name, result_entity_type_id,
+                        result_relationship_id, parent_entity_type_id, child_entity_type_id,
+                        config, created_at, updated_at
+                 FROM consolidation_decisions WHERE project_id = ?1
+                 ORDER BY created_at DESC",
+            )
+            .map_err(|e| format!("Failed to prepare decisions query: {e}"))?;
+
+        let rows: Vec<ConsolidationDecision> = stmt
+            .query_map(params![project_id], |row| {
+                let config_str: String = row.get(11)?;
+                Ok(ConsolidationDecision {
+                    id: row.get(0)?,
+                    project_id: row.get(1)?,
+                    decision_type: ConsolidationDecisionType::from_db_str(&row.get::<_, String>(2)?),
+                    entity_a_source_id: row.get(3)?,
+                    entity_a_name: row.get(4)?,
+                    entity_b_source_id: row.get(5)?,
+                    entity_b_name: row.get(6)?,
+                    result_entity_type_id: row.get(7)?,
+                    result_relationship_id: row.get(8)?,
+                    parent_entity_type_id: row.get(9)?,
+                    child_entity_type_id: row.get(10)?,
+                    config: serde_json::from_str(&config_str).unwrap_or(serde_json::json!({})),
+                    created_at: row.get(12)?,
+                    updated_at: row.get(13)?,
+                })
+            })
+            .map_err(|e| format!("Failed to query decisions: {e}"))?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        Ok(rows)
+    }
+
+    // ── Attribute Mapping CRUD ────────────────────────────────────────────────
+
+    /// List attribute mappings for a given entity type.
+    pub fn list_attribute_mappings(&self, entity_type_id: &str) -> Result<Vec<AttributeMapping>, String> {
+        let mut stmt = self.conn
+            .prepare(
+                "SELECT id, entity_type_id, source_id, source_column, canonical_name,
+                        rdf_predicate, xsd_datatype, is_omitted, sort_order,
+                        created_at, updated_at
+                 FROM attribute_mappings WHERE entity_type_id = ?1
+                 ORDER BY sort_order ASC, canonical_name ASC",
+            )
+            .map_err(|e| format!("Failed to prepare attribute_mappings query: {e}"))?;
+
+        let rows: Vec<AttributeMapping> = stmt
+            .query_map(params![entity_type_id], |row| {
+                Ok(AttributeMapping {
+                    id: row.get(0)?,
+                    entity_type_id: row.get(1)?,
+                    source_id: row.get(2)?,
+                    source_column: row.get(3)?,
+                    canonical_name: row.get(4)?,
+                    rdf_predicate: row.get(5)?,
+                    xsd_datatype: row.get(6)?,
+                    is_omitted: row.get::<_, i32>(7)? != 0,
+                    sort_order: row.get(8)?,
+                    created_at: row.get(9)?,
+                    updated_at: row.get(10)?,
+                })
+            })
+            .map_err(|e| format!("Failed to query attribute_mappings: {e}"))?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        Ok(rows)
+    }
+
+    /// Create or update an attribute mapping.
+    pub fn upsert_attribute_mapping(
+        &self,
+        entity_type_id: &str,
+        source_id: &str,
+        source_column: &str,
+        canonical_name: &str,
+        rdf_predicate: Option<&str>,
+        xsd_datatype: Option<&str>,
+        is_omitted: bool,
+        sort_order: i32,
+    ) -> Result<AttributeMapping, String> {
+        let now = Utc::now().to_rfc3339();
+        let id = Uuid::new_v4().to_string();
+
+        self.conn
+            .execute(
+                "INSERT INTO attribute_mappings
+                 (id, entity_type_id, source_id, source_column, canonical_name,
+                  rdf_predicate, xsd_datatype, is_omitted, sort_order, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+                 ON CONFLICT(entity_type_id, source_id, source_column) DO UPDATE SET
+                    canonical_name = excluded.canonical_name,
+                    rdf_predicate = excluded.rdf_predicate,
+                    xsd_datatype = excluded.xsd_datatype,
+                    is_omitted = excluded.is_omitted,
+                    sort_order = excluded.sort_order,
+                    updated_at = excluded.updated_at",
+                params![
+                    id, entity_type_id, source_id, source_column, canonical_name,
+                    rdf_predicate, xsd_datatype, is_omitted as i32, sort_order,
+                    now, now
+                ],
+            )
+            .map_err(|e| format!("Failed to upsert attribute mapping: {e}"))?;
+
+        // Read back the actual row (may have used existing ID on conflict).
+        self.conn
+            .query_row(
+                "SELECT id, entity_type_id, source_id, source_column, canonical_name,
+                        rdf_predicate, xsd_datatype, is_omitted, sort_order,
+                        created_at, updated_at
+                 FROM attribute_mappings
+                 WHERE entity_type_id = ?1 AND source_id = ?2 AND source_column = ?3",
+                params![entity_type_id, source_id, source_column],
+                |row| {
+                    Ok(AttributeMapping {
+                        id: row.get(0)?,
+                        entity_type_id: row.get(1)?,
+                        source_id: row.get(2)?,
+                        source_column: row.get(3)?,
+                        canonical_name: row.get(4)?,
+                        rdf_predicate: row.get(5)?,
+                        xsd_datatype: row.get(6)?,
+                        is_omitted: row.get::<_, i32>(7)? != 0,
+                        sort_order: row.get(8)?,
+                        created_at: row.get(9)?,
+                        updated_at: row.get(10)?,
+                    })
+                },
+            )
+            .map_err(|e| format!("Failed to read back attribute mapping: {e}"))
+    }
+
+    /// Delete an attribute mapping by ID.
+    pub fn delete_attribute_mapping(&self, id: &str) -> Result<(), String> {
+        self.conn
+            .execute("DELETE FROM attribute_mappings WHERE id = ?1", params![id])
+            .map_err(|e| format!("Failed to delete attribute mapping: {e}"))?;
+        Ok(())
+    }
+
+    /// Auto-generate attribute mappings for an entity type from its source bindings.
+    pub fn auto_generate_attribute_mappings(
+        &self,
+        entity_type_id: &str,
+    ) -> Result<Vec<AttributeMapping>, String> {
+        // Load all bindings for this entity type.
+        let mut stmt = self.conn
+            .prepare(
+                "SELECT source_id, entity_name FROM entity_source_bindings
+                 WHERE entity_type_id = ?1",
+            )
+            .map_err(|e| format!("Failed to prepare bindings query: {e}"))?;
+
+        let bindings: Vec<(String, String)> = stmt
+            .query_map(params![entity_type_id], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|e| format!("Failed to query bindings: {e}"))?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        let mut order = 0i32;
+        for (source_id, entity_name) in &bindings {
+            let entity = self.load_entity_with_attributes(source_id, entity_name)?;
+            for attr in &entity.attributes {
+                let default_predicate = format!("ex:{}", attr.name);
+                let xsd = Self::inferred_type_to_xsd(&attr.inferred_type);
+                self.upsert_attribute_mapping(
+                    entity_type_id, source_id, &attr.name, &attr.name,
+                    Some(&default_predicate), Some(xsd), false, order,
+                )?;
+                order += 1;
+            }
+        }
+
+        self.list_attribute_mappings(entity_type_id)
+    }
+
+    /// Map inferred column type to XSD datatype.
+    fn inferred_type_to_xsd(inferred: &str) -> &'static str {
+        match inferred {
+            "int" | "integer" | "bigint" => "xsd:integer",
+            "float" | "real" | "double" | "decimal" => "xsd:float",
+            "bool" | "boolean" => "xsd:boolean",
+            "date" => "xsd:date",
+            "datetime" | "timestamp" => "xsd:dateTime",
+            _ => "xsd:string",
+        }
+    }
+
     /// Fetch a single source by ID.
     fn get_source(&self, source_id: &str) -> Result<SourceDescriptor, String> {
         self.conn
@@ -1497,6 +2594,21 @@ fn apply_migrations(conn: &Connection) -> Result<(), String> {
             .map_err(|e| format!("Migration 6 failed: {e}"))?;
         conn.execute(
             "UPDATE _meta SET value = '6' WHERE key = 'schema_version'",
+            [],
+        )
+        .map_err(|e| format!("Failed to update schema version: {e}"))?;
+    }
+
+    if version < 7 {
+        conn.execute_batch(SCHEMA_V7)
+            .map_err(|e| format!("Migration 7 (new tables) failed: {e}"))?;
+        // ALTER TABLE statements must be executed one at a time in SQLite.
+        for stmt in SCHEMA_V7_ALTER.split(';').filter(|s| !s.trim().is_empty()) {
+            // Ignore "duplicate column" errors (idempotent migration).
+            let _ = conn.execute(stmt.trim(), []);
+        }
+        conn.execute(
+            "UPDATE _meta SET value = '7' WHERE key = 'schema_version'",
             [],
         )
         .map_err(|e| format!("Failed to update schema version: {e}"))?;

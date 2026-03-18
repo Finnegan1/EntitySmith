@@ -69,6 +69,18 @@ pub fn run() {
             commands::schema_graph::promote_proposal,
             commands::schema_graph::reset_proposal,
             commands::schema_graph::rename_proposal_relationship,
+            commands::consolidation::compute_entity_similarities,
+            commands::consolidation::list_entity_similarity_pairs,
+            commands::consolidation::get_entity_comparison,
+            commands::consolidation::execute_merge,
+            commands::consolidation::execute_link,
+            commands::consolidation::execute_subtype,
+            commands::consolidation::execute_keep_separate,
+            commands::consolidation::list_consolidation_decisions,
+            commands::attribute_mapping::list_attribute_mappings,
+            commands::attribute_mapping::upsert_attribute_mapping,
+            commands::attribute_mapping::delete_attribute_mapping,
+            commands::attribute_mapping::auto_generate_attribute_mappings,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

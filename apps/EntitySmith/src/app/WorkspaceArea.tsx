@@ -4,6 +4,7 @@ import {
   FolderOpen,
   GitFork,
   Inbox,
+  Layers,
   Link,
   PlusCircle,
 } from "lucide-react";
@@ -11,7 +12,8 @@ import { Button } from "@/components/ui/button";
 import { SourcesView } from "@/features/sources/SourcesView";
 import { ProposalsView } from "@/features/proposals/ProposalsView";
 import { SchemaGraphView } from "@/features/schema-graph";
-import type { AppView, EntityTypeWithBindings, Proposal, ProjectState, SourceDescriptor } from "@/types";
+import { ConsolidationView } from "@/features/consolidation/ConsolidationView";
+import type { AppView, EntityTypeWithBindings, Proposal, ProjectState, SchemaGraph, SourceDescriptor } from "@/types";
 
 interface WorkspaceAreaProps {
   activeView: AppView;
@@ -25,6 +27,7 @@ interface WorkspaceAreaProps {
   onProposalSelect: (proposal: Proposal | null) => void;
   selectedEntityTypeId: string | null;
   onEntityTypeSelect: (et: EntityTypeWithBindings | null) => void;
+  schemaGraph: SchemaGraph | null;
 }
 
 export function WorkspaceArea({
@@ -39,6 +42,7 @@ export function WorkspaceArea({
   onProposalSelect,
   selectedEntityTypeId,
   onEntityTypeSelect,
+  schemaGraph,
 }: WorkspaceAreaProps) {
   if (!project) {
     return (
@@ -72,6 +76,8 @@ export function WorkspaceArea({
             selectedEntityTypeId={selectedEntityTypeId}
             onEntityTypeSelect={onEntityTypeSelect}
           />
+        ) : activeView === "consolidation" ? (
+          <ConsolidationView schemaGraph={schemaGraph} />
         ) : (
           <div className="flex h-full items-center justify-center p-6">
             <EmptyViewState view={activeView} />
@@ -175,6 +181,7 @@ const VIEW_META: Record<AppView, { title: string }> = {
   sources: { title: "Sources" },
   "schema-graph": { title: "Schema Graph" },
   proposals: { title: "Proposals" },
+  consolidation: { title: "Consolidation" },
   identity: { title: "Identity Resolution" },
   export: { title: "Export" },
   settings: { title: "Settings" },
@@ -216,6 +223,11 @@ const VIEW_EMPTY: Record<
     icon: <Inbox size={28} />,
     message: "No proposals yet",
     detail: "Run profiling on registered sources to generate proposals.",
+  },
+  consolidation: {
+    icon: <Layers size={28} />,
+    message: "Consolidation",
+    detail: "Compare and merge similar entities across sources.",
   },
   identity: {
     icon: <Link size={28} />,
