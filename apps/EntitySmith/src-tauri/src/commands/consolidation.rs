@@ -67,6 +67,27 @@ pub fn get_entity_comparison(
     )
 }
 
+/// Compare an entity type (all bound sources merged) against a candidate source entity.
+#[tauri::command]
+pub fn get_entity_type_comparison(
+    entity_type_id: String,
+    candidate_source_id: String,
+    candidate_entity_name: String,
+    state: State<'_, AppState>,
+) -> Result<EntityComparisonData, String> {
+    let guard = state
+        .project
+        .lock()
+        .map_err(|_| "Project lock poisoned".to_string())?;
+    let store = guard.as_ref().ok_or("No project open")?;
+
+    store.get_entity_type_comparison(
+        &entity_type_id,
+        &candidate_source_id,
+        &candidate_entity_name,
+    )
+}
+
 /// Execute a merge consolidation decision.
 #[tauri::command]
 pub fn execute_merge(
@@ -223,4 +244,35 @@ pub fn get_sample_rows(
         .ok_or_else(|| format!("No adapter available for source kind {:?}", source.kind))?;
 
     adapter.sample_rows(&entity_name, limit.unwrap_or(5))
+}
+
+/// Return combined sample rows from all sources bound to an entity type.
+#[tauri::command]
+pub fn get_entity_type_sample_rows(
+    entity_type_id: String,
+    limit: Option<usize>,
+    state: State<'_, AppState>,
+) -> Result<Vec<HashMap<String, Option<String>>>, String> {
+    let guard = state
+        .project
+        .lock()
+        .map_err(|_| "Project lock poisoned".to_string())?;
+    let store = guard.as_ref().ok_or("No project open")?;
+
+    let bindings = store.get_bindings_for_entity_type(&entity_type_id)?;
+    let per_source = limit.unwrap_or(5);
+    let mut all_rows = Vec::new();
+
+    for (source_id, entity_name) in &bindings {
+        let source = store.get_source(source_id)?;
+        let adapter = adapter_for(&source.kind, source.path.as_deref())?
+            .ok_or_else(|| format!("No adapter available for source kind {:?}", source.kind))?;
+
+        match adapter.sample_rows(entity_name, per_source) {
+            Ok(rows) => all_rows.extend(rows),
+            Err(_) => {} // skip sources that fail
+        }
+    }
+
+    Ok(all_rows)
 }

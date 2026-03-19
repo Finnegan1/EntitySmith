@@ -18,6 +18,8 @@ interface SuggestionInspectorProps {
   entityBName: string;
   entityASourceName?: string;
   entityBSourceName?: string;
+  /** When set, compare the merged entity type (all bindings) against entity B */
+  entityTypeId?: string;
   onClose: () => void;
 }
 
@@ -28,6 +30,7 @@ export function SuggestionInspector({
   entityBName,
   entityASourceName,
   entityBSourceName,
+  entityTypeId,
   onClose,
 }: SuggestionInspectorProps) {
   const [data, setData] = useState<EntityComparisonData | null>(null);
@@ -43,18 +46,32 @@ export function SuggestionInspector({
     setIsLoading(true);
     setError(null);
 
-    const loadComparison = invoke<EntityComparisonData>("get_entity_comparison", {
-      entityASourceId,
-      entityAName,
-      entityBSourceId,
-      entityBName,
-    });
+    // If entityTypeId is provided, compare the merged entity type against the candidate.
+    // Otherwise, compare two individual source entities.
+    const loadComparison = entityTypeId
+      ? invoke<EntityComparisonData>("get_entity_type_comparison", {
+          entityTypeId,
+          candidateSourceId: entityBSourceId,
+          candidateEntityName: entityBName,
+        })
+      : invoke<EntityComparisonData>("get_entity_comparison", {
+          entityASourceId,
+          entityAName,
+          entityBSourceId,
+          entityBName,
+        });
 
-    const loadSamplesA = invoke<SampleRow[]>("get_sample_rows", {
-      sourceId: entityASourceId,
-      entityName: entityAName,
-      limit: 5,
-    }).catch(() => null);
+    // For entity type comparison, load combined sample rows from all bound sources.
+    const loadSamplesA = entityTypeId
+      ? invoke<SampleRow[]>("get_entity_type_sample_rows", {
+          entityTypeId,
+          limit: 5,
+        }).catch(() => null)
+      : invoke<SampleRow[]>("get_sample_rows", {
+          sourceId: entityASourceId,
+          entityName: entityAName,
+          limit: 5,
+        }).catch(() => null);
 
     const loadSamplesB = invoke<SampleRow[]>("get_sample_rows", {
       sourceId: entityBSourceId,
@@ -70,7 +87,7 @@ export function SuggestionInspector({
       })
       .catch((e) => setError(String(e)))
       .finally(() => setIsLoading(false));
-  }, [entityASourceId, entityAName, entityBSourceId, entityBName]);
+  }, [entityASourceId, entityAName, entityBSourceId, entityBName, entityTypeId]);
 
   const pct = data ? Math.round(data.similarityScore * 100) : 0;
 
@@ -304,49 +321,57 @@ function DataTab({
   joinKeys: Set<string>;
 }) {
   const [viewMode, setViewMode] = useState<DataViewMode>("side-by-side");
+  const hasJoinKeys = joinKeys.size > 0;
+
+  // Reset to side-by-side if keys are deselected while in merged mode
+  const effectiveMode = hasJoinKeys ? viewMode : "side-by-side";
 
   return (
     <>
       {/* Combined Data Table */}
-      {samplesA && samplesB && (
+      {(samplesA || samplesB) && (
         <div>
           <div className="flex items-end justify-between mb-2">
             <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
               Combined Data Sample
             </h3>
-            <div className="flex rounded-md border border-border overflow-hidden">
-              <button
-                onClick={() => setViewMode("side-by-side")}
-                className={`px-2.5 py-1 text-[11px] font-medium transition-colors ${
-                  viewMode === "side-by-side"
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-background text-muted-foreground hover:bg-muted/50"
-                }`}
-              >
-                Side by Side
-              </button>
-              <button
-                onClick={() => setViewMode("merged")}
-                className={`px-2.5 py-1 text-[11px] font-medium transition-colors border-l border-border ${
-                  viewMode === "merged"
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-background text-muted-foreground hover:bg-muted/50"
-                }`}
-              >
-                Merged
-              </button>
-            </div>
+            {hasJoinKeys && (
+              <div className="flex rounded-md border border-border overflow-hidden">
+                <button
+                  onClick={() => setViewMode("side-by-side")}
+                  className={`px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                    effectiveMode === "side-by-side"
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-background text-muted-foreground hover:bg-muted/50"
+                  }`}
+                >
+                  Side by Side
+                </button>
+                <button
+                  onClick={() => setViewMode("merged")}
+                  className={`px-2.5 py-1 text-[11px] font-medium transition-colors border-l border-border ${
+                    effectiveMode === "merged"
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-background text-muted-foreground hover:bg-muted/50"
+                  }`}
+                >
+                  Merged
+                </button>
+              </div>
+            )}
           </div>
           <p className="text-xs text-muted-foreground mb-3">
-            {viewMode === "side-by-side"
-              ? "Rows from both sources shown separately, mapped to canonical columns."
+            {effectiveMode === "side-by-side"
+              ? hasJoinKeys
+                ? "Rows from both sources shown separately, paired by join keys."
+                : "Rows from both sources shown separately. Select join keys in the Schema tab to enable merging."
               : "Rows merged on selected join keys — values from A preferred, B used as fallback."}
           </p>
-          {viewMode === "side-by-side" ? (
+          {effectiveMode === "side-by-side" ? (
             <MergedDataTable
               alignments={data.attributeAlignments}
-              samplesA={samplesA}
-              samplesB={samplesB}
+              samplesA={samplesA ?? []}
+              samplesB={samplesB ?? []}
               entityAName={entityAName}
               entityBName={entityBName}
               joinKeys={joinKeys}
@@ -354,8 +379,8 @@ function DataTab({
           ) : (
             <FlatMergedDataTable
               alignments={data.attributeAlignments}
-              samplesA={samplesA}
-              samplesB={samplesB}
+              samplesA={samplesA ?? []}
+              samplesB={samplesB ?? []}
               entityAName={entityAName}
               entityBName={entityBName}
               joinKeys={joinKeys}
@@ -941,13 +966,12 @@ function MergedDataTable({
       }
     }
   } else {
-    // No join keys selected — index-based pairing
-    const maxRows = Math.max(samplesA.length, samplesB.length);
-    for (let i = 0; i < maxRows; i++) {
-      rowPairs.push({
-        rowA: i < samplesA.length ? samplesA[i] : null,
-        rowB: i < samplesB.length ? samplesB[i] : null,
-      });
+    // No join keys selected — show all A rows then all B rows (no pairing)
+    for (const rowA of samplesA) {
+      rowPairs.push({ rowA, rowB: null });
+    }
+    for (const rowB of samplesB) {
+      rowPairs.push({ rowA: null, rowB });
     }
   }
 
@@ -1074,7 +1098,7 @@ function MergedDataTable({
         {joinCols.length > 0 ? (
           <span>Matched on: {joinCols.map((c) => c.canonical).join(", ")}</span>
         ) : (
-          <span className="italic">No join keys selected — rows paired by index. Select keys in the Schema tab.</span>
+          <span className="italic">No join keys selected. Select keys in the Schema tab to pair rows.</span>
         )}
       </div>
     </div>
@@ -1154,12 +1178,12 @@ function FlatMergedDataTable({
       if (!usedB.has(bi)) rowPairs.push({ rowA: null, rowB: samplesB[bi] });
     }
   } else {
-    const maxRows = Math.max(samplesA.length, samplesB.length);
-    for (let i = 0; i < maxRows; i++) {
-      rowPairs.push({
-        rowA: i < samplesA.length ? samplesA[i] : null,
-        rowB: i < samplesB.length ? samplesB[i] : null,
-      });
+    // No join keys — show each row as its own entry
+    for (const rowA of samplesA) {
+      rowPairs.push({ rowA, rowB: null });
+    }
+    for (const rowB of samplesB) {
+      rowPairs.push({ rowA: null, rowB });
     }
   }
 
@@ -1258,7 +1282,7 @@ function FlatMergedDataTable({
         {joinCols.length > 0 ? (
           <span>Merged on: {joinCols.map((c) => c.canonical).join(", ")}</span>
         ) : (
-          <span className="italic">No join keys — paired by index. Select keys in the Schema tab.</span>
+          <span className="italic">No join keys selected. Select keys in the Schema tab to merge rows.</span>
         )}
       </div>
     </div>

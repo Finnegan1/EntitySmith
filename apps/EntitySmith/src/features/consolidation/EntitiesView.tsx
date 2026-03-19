@@ -35,6 +35,8 @@ interface InspectTarget {
   entityBSourceId: string;
   entityBName: string;
   entityBSourceName?: string;
+  /** When set, compare the merged entity type (all bindings) against entity B */
+  entityTypeId?: string;
 }
 
 interface EntitiesViewProps {
@@ -347,6 +349,7 @@ export function EntitiesView({ schemaGraph: _externalGraph }: EntitiesViewProps)
           entityBSourceId={inspecting.entityBSourceId}
           entityBName={inspecting.entityBName}
           entityBSourceName={inspecting.entityBSourceName}
+          entityTypeId={inspecting.entityTypeId}
           onClose={() => setInspecting(null)}
         />
       )}
@@ -520,16 +523,18 @@ function EntityTypeCard({
                             onClick={() => {
                               const binding = et.bindings[0];
                               if (!binding) return;
-                              const boundSe = sourceEntities.find(
-                                (e) => e.sourceId === binding.sourceId && e.entityName === binding.entityName,
-                              );
                               onInspect({
                                 entityASourceId: binding.sourceId,
-                                entityAName: binding.entityName,
-                                entityASourceName: boundSe?.sourceName,
+                                entityAName: et.entityType.name,
+                                entityASourceName: et.bindings.length > 1
+                                  ? `${et.bindings.length} sources`
+                                  : sourceEntities.find(
+                                      (e) => e.sourceId === binding.sourceId && e.entityName === binding.entityName,
+                                    )?.sourceName,
                                 entityBSourceId: se.sourceId,
                                 entityBName: se.entityName,
                                 entityBSourceName: se.sourceName,
+                                entityTypeId: et.entityType.id,
                               });
                             }}
                           >

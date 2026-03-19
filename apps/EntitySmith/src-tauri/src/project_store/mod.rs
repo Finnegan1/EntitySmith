@@ -1867,6 +1867,91 @@ impl ProjectStore {
         alignments
     }
 
+    /// Return (source_id, entity_name) pairs for all bindings of an entity type.
+    pub fn get_bindings_for_entity_type(&self, entity_type_id: &str) -> Result<Vec<(String, String)>, String> {
+        let mut stmt = self.conn
+            .prepare(
+                "SELECT source_id, entity_name FROM entity_source_bindings WHERE entity_type_id = ?1",
+            )
+            .map_err(|e| format!("Failed to query bindings: {e}"))?;
+
+        let bindings: Vec<(String, String)> = stmt
+            .query_map(params![entity_type_id], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|e| format!("Failed to load bindings: {e}"))?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        Ok(bindings)
+    }
+
+    /// Compare an entity type (merged attributes from all bound sources) against a candidate source entity.
+    pub fn get_entity_type_comparison(
+        &self,
+        entity_type_id: &str,
+        candidate_source_id: &str,
+        candidate_entity_name: &str,
+    ) -> Result<EntityComparisonData, String> {
+        // Load the entity type name.
+        let entity_type_name: String = self.conn
+            .query_row(
+                "SELECT name FROM entity_types WHERE id = ?1",
+                params![entity_type_id],
+                |row| row.get(0),
+            )
+            .map_err(|e| format!("Entity type not found: {e}"))?;
+
+        // Load all bindings for this entity type.
+        let bindings = self.get_bindings_for_entity_type(entity_type_id)?;
+
+        if bindings.is_empty() {
+            return Err("Entity type has no bound sources".to_string());
+        }
+
+        // Load and merge attributes from all bound sources.
+        let mut merged_attrs: Vec<SourceAttributeProfile> = Vec::new();
+        let mut seen_names = std::collections::HashSet::new();
+        let mut total_row_count: i64 = 0;
+
+        for (src_id, entity_name) in &bindings {
+            let entity = self.load_entity_with_attributes(src_id, entity_name)?;
+            total_row_count += entity.profile.row_count;
+            for attr in entity.attributes {
+                if seen_names.insert(attr.name.clone()) {
+                    merged_attrs.push(attr);
+                }
+                // If the attribute name was already seen (from another source),
+                // we keep the first occurrence — the merged entity represents the
+                // union of all columns.
+            }
+        }
+
+        let merged_entity = EntityWithAttributes {
+            profile: SourceEntityProfile {
+                source_id: format!("entity_type:{entity_type_id}"),
+                name: entity_type_name,
+                row_count: total_row_count,
+            },
+            attributes: merged_attrs,
+        };
+
+        // Load candidate entity.
+        let candidate = self.load_entity_with_attributes(candidate_source_id, candidate_entity_name)?;
+
+        // Compute alignment and score.
+        let alignments = Self::compute_attribute_alignment(&merged_entity, &candidate);
+        let (score, details) = Self::compute_similarity_score(&merged_entity, &candidate);
+
+        Ok(EntityComparisonData {
+            entity_a: merged_entity,
+            entity_b: candidate,
+            attribute_alignments: alignments,
+            similarity_score: score,
+            scoring_details: details,
+        })
+    }
+
     /// Execute a merge consolidation decision.
     pub fn execute_merge(
         &self,
