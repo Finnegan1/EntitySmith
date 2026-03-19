@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { EntitySimilarityPair } from "@/types";
+import { MergeScoreBadge } from "./MergeScoreBadge";
 
 type StatusFilter = "all" | "pending" | "resolved";
 
@@ -92,8 +93,6 @@ function PairRow({
   pair: EntitySimilarityPair;
   onCompare: (pair: EntitySimilarityPair) => void;
 }) {
-  const pct = Math.round(pair.similarityScore * 100);
-
   return (
     <div className="grid grid-cols-[1fr_auto_1fr_80px_80px_70px] items-center gap-2 border-b border-border/50 px-4 py-2 hover:bg-accent/30 transition-colors">
       {/* Entity A */}
@@ -116,14 +115,13 @@ function PairRow({
       </div>
 
       {/* Score */}
-      <div className="flex items-center justify-center gap-1.5">
-        <div className="h-1.5 w-12 overflow-hidden rounded-full bg-muted">
-          <div
-            className="h-full rounded-full bg-primary transition-all"
-            style={{ width: `${pct}%` }}
-          />
-        </div>
-        <span className="text-xs font-medium tabular-nums">{pct}%</span>
+      <div className="flex items-center justify-center">
+        <MergeScoreBadge
+          entityASourceId={pair.entityASourceId}
+          entityAName={pair.entityAName}
+          entityBSourceId={pair.entityBSourceId}
+          entityBName={pair.entityBName}
+        />
       </div>
 
       {/* Status */}

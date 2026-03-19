@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Database, Loader2, Table2, X } from "lucide-react";
+import { Check, Database, Loader2, Plus, Table2, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import type {
   AttributeAlignment,
   EntityComparisonData,
@@ -21,6 +22,8 @@ interface SuggestionInspectorProps {
   /** When set, compare the merged entity type (all bindings) against entity B */
   entityTypeId?: string;
   onClose: () => void;
+  /** When provided, shows an "Add to Entity" button in the footer. */
+  onAdd?: () => Promise<void>;
 }
 
 export function SuggestionInspector({
@@ -32,6 +35,7 @@ export function SuggestionInspector({
   entityBSourceName,
   entityTypeId,
   onClose,
+  onAdd,
 }: SuggestionInspectorProps) {
   const [data, setData] = useState<EntityComparisonData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -41,6 +45,8 @@ export function SuggestionInspector({
   const [tab, setTab] = useState<TabMode>("schema");
   // Join keys: canonical column names the user picks for matching rows
   const [joinKeys, setJoinKeys] = useState<Set<string>>(new Set());
+  const [isAdding, setIsAdding] = useState(false);
+  const [added, setAdded] = useState(false);
 
   useEffect(() => {
     setIsLoading(true);
@@ -89,7 +95,15 @@ export function SuggestionInspector({
       .finally(() => setIsLoading(false));
   }, [entityASourceId, entityAName, entityBSourceId, entityBName, entityTypeId]);
 
-  const pct = data ? Math.round(data.similarityScore * 100) : 0;
+  const mergeFactors = data
+    ? computeMergeFactors(
+        data.attributeAlignments,
+        data.entityA.attributes,
+        data.entityB.attributes,
+        data.scoringDetails,
+      )
+    : null;
+  const pct = mergeFactors ? Math.round(mergeFactors.composite * 100) : 0;
 
   return (
     <>
@@ -193,6 +207,55 @@ export function SuggestionInspector({
             </div>
           </div>
         )}
+
+        {/* Footer with Add action */}
+        {onAdd && data && (
+          <div className="shrink-0 flex items-center justify-between border-t border-border px-6 py-3">
+            <div className="text-xs text-muted-foreground">
+              {joinKeys.size > 0 ? (
+                <span>
+                  Join keys: <span className="font-mono font-medium text-foreground">{[...joinKeys].join(", ")}</span>
+                </span>
+              ) : (
+                <span>No join keys selected — select them in the Schema tab before adding.</span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <Button size="sm" variant="ghost" onClick={onClose}>
+                Cancel
+              </Button>
+              {added ? (
+                <Button size="sm" disabled className="gap-1.5">
+                  <Check size={14} />
+                  Added
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  className="gap-1.5"
+                  disabled={isAdding}
+                  onClick={async () => {
+                    setIsAdding(true);
+                    try {
+                      await onAdd();
+                      setAdded(true);
+                      setTimeout(() => onClose(), 600);
+                    } finally {
+                      setIsAdding(false);
+                    }
+                  }}
+                >
+                  {isAdding ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : (
+                    <Plus size={14} />
+                  )}
+                  {isAdding ? "Adding…" : "Add to Entity"}
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </>
   );
@@ -284,17 +347,18 @@ function SchemaTab({
         </p>
       </div>
 
-      {/* Scoring Breakdown */}
+      {/* Merge Score */}
       <div>
         <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3">
-          Why This Match
+          Merge Score
         </h3>
-        <ScoringBreakdown
-          score={data.similarityScore}
-          details={data.scoringDetails}
+        <MergeScore
           alignments={data.attributeAlignments}
-          totalA={data.entityA.attributes.length}
-          totalB={data.entityB.attributes.length}
+          attrsA={data.entityA.attributes}
+          attrsB={data.entityB.attributes}
+          scoringDetails={data.scoringDetails}
+          entityAName={entityAName}
+          entityBName={entityBName}
         />
       </div>
     </>
@@ -394,226 +458,7 @@ function DataTab({
           No sample data available for these sources.
         </div>
       )}
-
-      {/* Data Compatibility */}
-      <div>
-        <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3">
-          Data Compatibility
-        </h3>
-        <DataCompatibility
-          alignments={data.attributeAlignments}
-          attrsA={data.entityA.attributes}
-          attrsB={data.entityB.attributes}
-          entityAName={entityAName}
-          entityBName={entityBName}
-        />
-      </div>
     </>
-  );
-}
-
-// ── Data Compatibility ────────────────────────────────────────────────────────
-
-function DataCompatibility({
-  alignments,
-  attrsA,
-  attrsB,
-  entityAName,
-  entityBName,
-}: {
-  alignments: AttributeAlignment[];
-  attrsA: SourceAttributeProfile[];
-  attrsB: SourceAttributeProfile[];
-  entityAName: string;
-  entityBName: string;
-}) {
-  const matched = alignments.filter(
-    (a) => a.matchType === "exact" || a.matchType === "inferred",
-  );
-
-  const comparisons: {
-    canonical: string;
-    colA: string;
-    colB: string;
-    typeA: string;
-    typeB: string;
-    typeMatch: boolean;
-    nullPctA: number;
-    nullPctB: number;
-    uniquePctA: number;
-    uniquePctB: number;
-    valueOverlap: number | null;
-    rangeA: string | null;
-    rangeB: string | null;
-    topValuesA: { value: string; count: number }[];
-    topValuesB: { value: string; count: number }[];
-  }[] = [];
-
-  for (const m of matched) {
-    const attrA = attrsA.find((a) => a.name === m.sourceAColumn);
-    const attrB = attrsB.find((a) => a.name === m.sourceBColumn);
-    if (!attrA || !attrB) continue;
-
-    const typeMatch = attrA.inferredType === attrB.inferredType;
-
-    let valueOverlap: number | null = null;
-    if (attrA.topValues.length > 0 && attrB.topValues.length > 0) {
-      const valsA = new Set(attrA.topValues.map((v) => v.value));
-      const valsB = new Set(attrB.topValues.map((v) => v.value));
-      const intersection = [...valsA].filter((v) => valsB.has(v)).length;
-      const union = new Set([...valsA, ...valsB]).size;
-      valueOverlap = union > 0 ? intersection / union : null;
-    }
-
-    const canonical = m.sourceAColumn ?? m.sourceBColumn ?? "";
-
-    comparisons.push({
-      canonical,
-      colA: m.sourceAColumn ?? "",
-      colB: m.sourceBColumn ?? "",
-      typeA: attrA.inferredType,
-      typeB: attrB.inferredType,
-      typeMatch,
-      nullPctA: attrA.nullPct,
-      nullPctB: attrB.nullPct,
-      uniquePctA: attrA.uniquePct,
-      uniquePctB: attrB.uniquePct,
-      valueOverlap,
-      rangeA: attrA.minValue != null ? `${attrA.minValue} – ${attrA.maxValue ?? "?"}` : null,
-      rangeB: attrB.minValue != null ? `${attrB.minValue} – ${attrB.maxValue ?? "?"}` : null,
-      topValuesA: attrA.topValues,
-      topValuesB: attrB.topValues,
-    });
-  }
-
-  if (comparisons.length === 0) {
-    return (
-      <div className="rounded-md border border-border px-5 py-4 text-sm text-muted-foreground">
-        No matched columns to compare data compatibility.
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-3">
-      {comparisons.map((c, i) => (
-        <div key={i} className="rounded-md border border-border overflow-hidden">
-          {/* Column header */}
-          <div className="flex items-center gap-3 px-4 py-2.5 bg-muted/20 border-b border-border">
-            <span className="font-mono text-sm font-medium">{c.canonical}</span>
-            {c.colA !== c.colB && (
-              <span className="text-xs text-muted-foreground">
-                ({c.colA} ↔ {c.colB})
-              </span>
-            )}
-            <div className="flex-1" />
-            {c.typeMatch ? (
-              <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 border-green-500/50 text-green-600">
-                {c.typeA}
-              </Badge>
-            ) : (
-              <div className="flex items-center gap-1">
-                <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 border-amber-500/50 text-amber-600">
-                  {c.typeA}
-                </Badge>
-                <span className="text-xs text-muted-foreground">→</span>
-                <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 border-amber-500/50 text-amber-600">
-                  {c.typeB}
-                </Badge>
-              </div>
-            )}
-          </div>
-
-          {/* Stats grid */}
-          <div className="grid grid-cols-2 divide-x divide-border/40">
-            {/* Left: source A */}
-            <div className="px-4 py-2 space-y-1.5">
-              <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-                {entityAName}
-              </div>
-              <div className="flex items-center gap-3 text-xs">
-                <span className="text-muted-foreground w-14">Nulls</span>
-                <PercentBar value={c.nullPctA} color="bg-red-400/60" />
-              </div>
-              <div className="flex items-center gap-3 text-xs">
-                <span className="text-muted-foreground w-14">Unique</span>
-                <PercentBar value={c.uniquePctA} color="bg-blue-400/60" />
-              </div>
-              {c.rangeA && (
-                <div className="flex items-center gap-3 text-xs">
-                  <span className="text-muted-foreground w-14">Range</span>
-                  <span className="font-mono text-[11px] truncate">{c.rangeA}</span>
-                </div>
-              )}
-              {c.topValuesA.length > 0 && (
-                <div className="flex items-start gap-3 text-xs">
-                  <span className="text-muted-foreground w-14 pt-0.5">Top</span>
-                  <div className="flex flex-wrap gap-1">
-                    {c.topValuesA.map((v, j) => (
-                      <span key={j} className="font-mono text-[10px] bg-muted/40 px-1.5 py-0.5 rounded">
-                        {v.value}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Right: source B */}
-            <div className="px-4 py-2 space-y-1.5">
-              <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-                {entityBName}
-              </div>
-              <div className="flex items-center gap-3 text-xs">
-                <span className="text-muted-foreground w-14">Nulls</span>
-                <PercentBar value={c.nullPctB} color="bg-red-400/60" />
-              </div>
-              <div className="flex items-center gap-3 text-xs">
-                <span className="text-muted-foreground w-14">Unique</span>
-                <PercentBar value={c.uniquePctB} color="bg-blue-400/60" />
-              </div>
-              {c.rangeB && (
-                <div className="flex items-center gap-3 text-xs">
-                  <span className="text-muted-foreground w-14">Range</span>
-                  <span className="font-mono text-[11px] truncate">{c.rangeB}</span>
-                </div>
-              )}
-              {c.topValuesB.length > 0 && (
-                <div className="flex items-start gap-3 text-xs">
-                  <span className="text-muted-foreground w-14 pt-0.5">Top</span>
-                  <div className="flex flex-wrap gap-1">
-                    {c.topValuesB.map((v, j) => (
-                      <span key={j} className="font-mono text-[10px] bg-muted/40 px-1.5 py-0.5 rounded">
-                        {v.value}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Value overlap footer */}
-          {c.valueOverlap != null && (
-            <div className="flex items-center gap-3 px-4 py-2 bg-muted/10 border-t border-border">
-              <span className="text-xs text-muted-foreground">Value overlap:</span>
-              <div className="h-2 w-24 overflow-hidden rounded-full bg-muted">
-                <div
-                  className="h-full rounded-full bg-green-500/70"
-                  style={{ width: `${Math.round(c.valueOverlap * 100)}%` }}
-                />
-              </div>
-              <span className="text-xs font-medium tabular-nums">
-                {Math.round(c.valueOverlap * 100)}%
-              </span>
-              <span className="text-[10px] text-muted-foreground">
-                of top values are shared between both sources
-              </span>
-            </div>
-          )}
-        </div>
-      ))}
-    </div>
   );
 }
 
@@ -759,124 +604,430 @@ function AlignmentRow({
   );
 }
 
-// ── Scoring Breakdown ─────────────────────────────────────────────────────────
+// ── Merge Score ───────────────────────────────────────────────────────────────
+//
+// Composite score measuring how well two datasets can be united into a
+// comprehensive merged dataset. Five weighted factors:
+//
+//   Schema Overlap  (25%) — Dice coefficient of matched columns
+//   Value Overlap   (30%) — Average Jaccard of top values across matched cols
+//   Type Alignment  (15%) — Fraction of matched columns sharing the same type
+//   Completeness    (15%) — How well the sources fill each other's null gaps
+//   Name Similarity (15%) — Table name + column name similarity
+//
+// The emphasis is on *data overlap* (value overlap gets the highest weight)
+// because that's the strongest signal for whether two tables describe the same
+// real-world entities and can be meaningfully joined.
 
-function ScoringBreakdown({
-  score,
-  details,
-  alignments,
-  totalA,
-  totalB,
-}: {
-  score: number;
-  details: Record<string, unknown>;
-  alignments: AttributeAlignment[];
-  totalA: number;
-  totalB: number;
-}) {
+interface ColumnComparison {
+  canonical: string;
+  colA: string;
+  colB: string;
+  typeA: string;
+  typeB: string;
+  typeMatch: boolean;
+  nullPctA: number;
+  nullPctB: number;
+  uniquePctA: number;
+  uniquePctB: number;
+  valueOverlap: number | null;
+  rangeA: string | null;
+  rangeB: string | null;
+  topValuesA: { value: string; count: number }[];
+  topValuesB: { value: string; count: number }[];
+}
+
+export function computeMergeFactors(
+  alignments: AttributeAlignment[],
+  attrsA: SourceAttributeProfile[],
+  attrsB: SourceAttributeProfile[],
+  scoringDetails: Record<string, unknown>,
+) {
   const matched = alignments.filter(
     (a) => a.matchType === "exact" || a.matchType === "inferred",
-  ).length;
+  );
+  const matchedCount = matched.length;
+  const totalA = attrsA.length;
+  const totalB = attrsB.length;
+
+  // Build per-column comparisons
+  const columns: ColumnComparison[] = [];
+  for (const m of matched) {
+    const attrA = attrsA.find((a) => a.name === m.sourceAColumn);
+    const attrB = attrsB.find((a) => a.name === m.sourceBColumn);
+    if (!attrA || !attrB) continue;
+
+    let valueOverlap: number | null = null;
+    if (attrA.topValues.length > 0 && attrB.topValues.length > 0) {
+      const valsA = new Set(attrA.topValues.map((v) => v.value));
+      const valsB = new Set(attrB.topValues.map((v) => v.value));
+      const intersection = [...valsA].filter((v) => valsB.has(v)).length;
+      const union = new Set([...valsA, ...valsB]).size;
+      valueOverlap = union > 0 ? intersection / union : null;
+    }
+
+    columns.push({
+      canonical: m.sourceAColumn ?? m.sourceBColumn ?? "",
+      colA: m.sourceAColumn ?? "",
+      colB: m.sourceBColumn ?? "",
+      typeA: attrA.inferredType,
+      typeB: attrB.inferredType,
+      typeMatch: attrA.inferredType === attrB.inferredType,
+      nullPctA: attrA.nullPct,
+      nullPctB: attrB.nullPct,
+      uniquePctA: attrA.uniquePct,
+      uniquePctB: attrB.uniquePct,
+      valueOverlap,
+      rangeA: attrA.minValue != null ? `${attrA.minValue} – ${attrA.maxValue ?? "?"}` : null,
+      rangeB: attrB.minValue != null ? `${attrB.minValue} – ${attrB.maxValue ?? "?"}` : null,
+      topValuesA: attrA.topValues,
+      topValuesB: attrB.topValues,
+    });
+  }
+
+  // 1. Schema Overlap — Dice coefficient: 2*matched / (colsA + colsB)
+  const schemaOverlap = totalA + totalB > 0 ? (2 * matchedCount) / (totalA + totalB) : 0;
+
+  // 2. Value Overlap — average Jaccard across matched columns (only those with data)
+  const colsWithOverlap = columns.filter((c) => c.valueOverlap != null);
+  const valueOverlapAvg =
+    colsWithOverlap.length > 0
+      ? colsWithOverlap.reduce((sum, c) => sum + c.valueOverlap!, 0) / colsWithOverlap.length
+      : 0;
+
+  // 3. Type Alignment — fraction of matched columns with same type
+  const typeAlignmentCount = columns.filter((c) => c.typeMatch).length;
+  const typeAlignment = columns.length > 0 ? typeAlignmentCount / columns.length : 0;
+
+  // 4. Completeness — how well sources complement each other's nulls.
+  //    For each matched column, the "combined completeness" is:
+  //    1 - (nullPctA * nullPctB)  (probability both are null simultaneously)
+  //    We average this and compare to the average individual completeness.
+  const completeness =
+    columns.length > 0
+      ? columns.reduce((sum, c) => {
+          const combinedNonNull = 1 - c.nullPctA * c.nullPctB;
+          return sum + combinedNonNull;
+        }, 0) / columns.length
+      : 0;
+
+  // 5. Name Similarity — from backend scoring details
+  const entityNameSim = (scoringDetails.entity_name_similarity as number) ?? 0;
+  const avgColNameSim = (scoringDetails.avg_name_similarity as number) ?? 0;
+  const nameSimilarity = (entityNameSim + avgColNameSim) / 2;
+
+  // Weighted composite
+  const weights = {
+    schemaOverlap: 0.25,
+    valueOverlap: 0.30,
+    typeAlignment: 0.15,
+    completeness: 0.15,
+    nameSimilarity: 0.15,
+  };
+
+  const composite =
+    weights.schemaOverlap * schemaOverlap +
+    weights.valueOverlap * valueOverlapAvg +
+    weights.typeAlignment * typeAlignment +
+    weights.completeness * completeness +
+    weights.nameSimilarity * nameSimilarity;
+
   const exactCount = alignments.filter((a) => a.matchType === "exact").length;
   const inferredCount = alignments.filter((a) => a.matchType === "inferred").length;
   const unmatchedA = alignments.filter((a) => a.matchType === "unmatched_a").length;
   const unmatchedB = alignments.filter((a) => a.matchType === "unmatched_b").length;
 
-  const coverage = details.coverage as number | undefined;
-  const avgNameSim = details.avg_name_similarity as number | undefined;
-  const typeMatches = details.type_matches as number | undefined;
-  const entityNameSim = details.entity_name_similarity as number | undefined;
+  return {
+    composite,
+    factors: {
+      schemaOverlap,
+      valueOverlap: valueOverlapAvg,
+      typeAlignment,
+      completeness,
+      nameSimilarity,
+    },
+    weights,
+    matchedCount,
+    exactCount,
+    inferredCount,
+    unmatchedA,
+    unmatchedB,
+    totalA,
+    totalB,
+    typeAlignmentCount,
+    colsWithOverlapCount: colsWithOverlap.length,
+    columns,
+  };
+}
+
+function scoreColor(value: number): string {
+  if (value >= 0.8) return "text-green-600";
+  if (value >= 0.5) return "text-amber-600";
+  return "text-red-500";
+}
+
+function scoreBarColor(value: number): string {
+  if (value >= 0.8) return "bg-green-500";
+  if (value >= 0.5) return "bg-amber-500";
+  return "bg-red-400";
+}
+
+function MergeScore({
+  alignments,
+  attrsA,
+  attrsB,
+  scoringDetails,
+  entityAName,
+  entityBName,
+}: {
+  alignments: AttributeAlignment[];
+  attrsA: SourceAttributeProfile[];
+  attrsB: SourceAttributeProfile[];
+  scoringDetails: Record<string, unknown>;
+  entityAName: string;
+  entityBName: string;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const m = computeMergeFactors(alignments, attrsA, attrsB, scoringDetails);
+  const compositePct = Math.round(m.composite * 100);
+
+  const factors: {
+    key: string;
+    label: string;
+    value: number;
+    weight: number;
+    detail: string;
+  }[] = [
+    {
+      key: "valueOverlap",
+      label: "Value Overlap",
+      value: m.factors.valueOverlap,
+      weight: m.weights.valueOverlap,
+      detail:
+        m.colsWithOverlapCount > 0
+          ? `Average Jaccard similarity of top values across ${m.colsWithOverlapCount} column${m.colsWithOverlapCount !== 1 ? "s" : ""}`
+          : "No top-value data available for matched columns",
+    },
+    {
+      key: "schemaOverlap",
+      label: "Schema Overlap",
+      value: m.factors.schemaOverlap,
+      weight: m.weights.schemaOverlap,
+      detail: `${m.matchedCount} of ${m.totalA + m.totalB} columns matched (${m.exactCount} exact, ${m.inferredCount} inferred) · ${m.unmatchedA} only A, ${m.unmatchedB} only B`,
+    },
+    {
+      key: "typeAlignment",
+      label: "Type Alignment",
+      value: m.factors.typeAlignment,
+      weight: m.weights.typeAlignment,
+      detail: `${m.typeAlignmentCount} of ${m.matchedCount} matched columns share the same data type`,
+    },
+    {
+      key: "completeness",
+      label: "Completeness",
+      value: m.factors.completeness,
+      weight: m.weights.completeness,
+      detail: "How well the sources fill each other's null gaps when combined",
+    },
+    {
+      key: "nameSimilarity",
+      label: "Name Similarity",
+      value: m.factors.nameSimilarity,
+      weight: m.weights.nameSimilarity,
+      detail: "Average of table name and column name similarity (Jaro-Winkler)",
+    },
+  ];
 
   return (
     <div className="rounded-md border border-border overflow-hidden">
-      <div className="flex items-center gap-3 px-5 py-3 bg-muted/20 border-b border-border">
-        <span className="text-sm text-muted-foreground">Overall:</span>
-        <div className="h-3 w-36 overflow-hidden rounded-full bg-muted">
-          <div
-            className="h-full rounded-full bg-primary transition-all"
-            style={{ width: `${Math.round(score * 100)}%` }}
-          />
-        </div>
-        <span className="text-base font-semibold tabular-nums">{Math.round(score * 100)}%</span>
-      </div>
-
-      <div className="divide-y divide-border/40">
-        <ScoreFactor
-          label="Column matches"
-          description={`${matched} of ${totalA + totalB} columns matched (${exactCount} exact, ${inferredCount} inferred)`}
-          value={coverage}
-        />
-        <ScoreFactor
-          label="Name similarity"
-          description="Average Jaro-Winkler score across matched column names"
-          value={avgNameSim}
-        />
-        <ScoreFactor
-          label="Type alignment"
-          description={`${typeMatches ?? 0} matched columns share the same data type`}
-          value={typeMatches != null && matched > 0 ? (typeMatches as number) / matched : undefined}
-          isCount
-          count={typeMatches as number | undefined}
-          total={matched}
-        />
-        <ScoreFactor
-          label="Table name similarity"
-          description="Jaro-Winkler score between the two table names"
-          value={entityNameSim}
-        />
-        <div className="flex items-center gap-4 px-5 py-2.5 text-sm">
-          <span className="text-muted-foreground w-36">Unmatched columns</span>
-          <span className="text-muted-foreground">
-            {unmatchedA} only in A · {unmatchedB} only in B
+      {/* Overall score header */}
+      <div className="flex items-center gap-4 px-5 py-3.5 bg-muted/20 border-b border-border">
+        <div className="flex items-center gap-3 flex-1">
+          <span className={`text-2xl font-bold tabular-nums ${scoreColor(m.composite)}`}>
+            {compositePct}%
           </span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ScoreFactor({
-  label,
-  description,
-  value,
-  isCount,
-  count,
-  total,
-}: {
-  label: string;
-  description: string;
-  value: number | undefined;
-  isCount?: boolean;
-  count?: number;
-  total?: number;
-}) {
-  const pct = value != null ? Math.round(value * 100) : null;
-
-  return (
-    <div className="flex items-center gap-4 px-5 py-2.5">
-      <div className="w-36 shrink-0">
-        <span className="text-sm font-medium">{label}</span>
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-xs text-muted-foreground truncate">{description}</p>
-      </div>
-      <div className="flex items-center gap-2 shrink-0">
-        {pct != null ? (
-          <>
-            <div className="h-2 w-20 overflow-hidden rounded-full bg-muted">
+          <div className="flex-1">
+            <div className="h-3 w-full max-w-xs overflow-hidden rounded-full bg-muted">
               <div
-                className="h-full rounded-full bg-primary/70"
-                style={{ width: `${pct}%` }}
+                className={`h-full rounded-full transition-all ${scoreBarColor(m.composite)}`}
+                style={{ width: `${compositePct}%` }}
               />
             </div>
-            <span className="text-sm text-muted-foreground tabular-nums w-10 text-right">
-              {isCount && count != null ? `${count}/${total}` : `${pct}%`}
-            </span>
-          </>
-        ) : (
-          <span className="text-sm text-muted-foreground/50">—</span>
-        )}
+          </div>
+        </div>
+        <span className="text-xs text-muted-foreground">
+          {compositePct >= 80
+            ? "Highly compatible — strong candidate for merging"
+            : compositePct >= 50
+              ? "Moderately compatible — review column details"
+              : "Low compatibility — datasets may describe different things"}
+        </span>
       </div>
+
+      {/* Factor breakdown */}
+      <div className="divide-y divide-border/40">
+        {factors.map((f) => {
+          const pct = Math.round(f.value * 100);
+          const contribution = Math.round(f.value * f.weight * 100);
+          return (
+            <div key={f.key} className="flex items-center gap-4 px-5 py-2.5">
+              <div className="w-36 shrink-0">
+                <span className="text-sm font-medium">{f.label}</span>
+                <span className="text-[10px] text-muted-foreground ml-1.5">
+                  ×{Math.round(f.weight * 100)}%
+                </span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs text-muted-foreground truncate">{f.detail}</p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <div className="h-2 w-20 overflow-hidden rounded-full bg-muted">
+                  <div
+                    className={`h-full rounded-full ${scoreBarColor(f.value)}`}
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+                <span className={`text-sm tabular-nums w-10 text-right font-medium ${scoreColor(f.value)}`}>
+                  {pct}%
+                </span>
+                <span className="text-[10px] text-muted-foreground tabular-nums w-8 text-right">
+                  +{contribution}
+                </span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Per-column detail (expandable) */}
+      {m.columns.length > 0 && (
+        <>
+          <button
+            onClick={() => setExpanded(!expanded)}
+            className="w-full flex items-center justify-between px-5 py-2 bg-muted/10 border-t border-border text-xs text-muted-foreground hover:bg-muted/20 transition-colors"
+          >
+            <span>
+              {expanded ? "Hide" : "Show"} per-column data compatibility ({m.columns.length} columns)
+            </span>
+            <span className="text-[10px]">{expanded ? "▲" : "▼"}</span>
+          </button>
+          {expanded && (
+            <div className="border-t border-border divide-y divide-border/40">
+              {m.columns.map((c, i) => (
+                <div key={i} className="px-5 py-3">
+                  {/* Column name + type */}
+                  <div className="flex items-center gap-3 mb-2">
+                    <span className="font-mono text-xs font-medium">{c.canonical}</span>
+                    {c.colA !== c.colB && (
+                      <span className="text-[10px] text-muted-foreground">
+                        ({c.colA} ↔ {c.colB})
+                      </span>
+                    )}
+                    <div className="flex-1" />
+                    {c.typeMatch ? (
+                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 border-green-500/50 text-green-600">
+                        {c.typeA}
+                      </Badge>
+                    ) : (
+                      <div className="flex items-center gap-1">
+                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 border-amber-500/50 text-amber-600">
+                          {c.typeA}
+                        </Badge>
+                        <span className="text-[10px] text-muted-foreground">→</span>
+                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 border-amber-500/50 text-amber-600">
+                          {c.typeB}
+                        </Badge>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Side-by-side stats */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                        {entityAName}
+                      </div>
+                      <div className="flex items-center gap-3 text-xs">
+                        <span className="text-muted-foreground w-12">Nulls</span>
+                        <PercentBar value={c.nullPctA} color="bg-red-400/60" />
+                      </div>
+                      <div className="flex items-center gap-3 text-xs">
+                        <span className="text-muted-foreground w-12">Unique</span>
+                        <PercentBar value={c.uniquePctA} color="bg-blue-400/60" />
+                      </div>
+                      {c.rangeA && (
+                        <div className="flex items-center gap-3 text-xs">
+                          <span className="text-muted-foreground w-12">Range</span>
+                          <span className="font-mono text-[11px] truncate">{c.rangeA}</span>
+                        </div>
+                      )}
+                      {c.topValuesA.length > 0 && (
+                        <div className="flex items-start gap-3 text-xs">
+                          <span className="text-muted-foreground w-12 pt-0.5">Top</span>
+                          <div className="flex flex-wrap gap-1">
+                            {c.topValuesA.map((v, j) => (
+                              <span key={j} className="font-mono text-[10px] bg-muted/40 px-1.5 py-0.5 rounded">
+                                {v.value}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    <div className="space-y-1">
+                      <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                        {entityBName}
+                      </div>
+                      <div className="flex items-center gap-3 text-xs">
+                        <span className="text-muted-foreground w-12">Nulls</span>
+                        <PercentBar value={c.nullPctB} color="bg-red-400/60" />
+                      </div>
+                      <div className="flex items-center gap-3 text-xs">
+                        <span className="text-muted-foreground w-12">Unique</span>
+                        <PercentBar value={c.uniquePctB} color="bg-blue-400/60" />
+                      </div>
+                      {c.rangeB && (
+                        <div className="flex items-center gap-3 text-xs">
+                          <span className="text-muted-foreground w-12">Range</span>
+                          <span className="font-mono text-[11px] truncate">{c.rangeB}</span>
+                        </div>
+                      )}
+                      {c.topValuesB.length > 0 && (
+                        <div className="flex items-start gap-3 text-xs">
+                          <span className="text-muted-foreground w-12 pt-0.5">Top</span>
+                          <div className="flex flex-wrap gap-1">
+                            {c.topValuesB.map((v, j) => (
+                              <span key={j} className="font-mono text-[10px] bg-muted/40 px-1.5 py-0.5 rounded">
+                                {v.value}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Value overlap */}
+                  {c.valueOverlap != null && (
+                    <div className="flex items-center gap-3 mt-2 pt-2 border-t border-border/30">
+                      <span className="text-xs text-muted-foreground">Value overlap:</span>
+                      <div className="h-2 w-20 overflow-hidden rounded-full bg-muted">
+                        <div
+                          className="h-full rounded-full bg-green-500/70"
+                          style={{ width: `${Math.round(c.valueOverlap * 100)}%` }}
+                        />
+                      </div>
+                      <span className={`text-xs font-medium tabular-nums ${scoreColor(c.valueOverlap)}`}>
+                        {Math.round(c.valueOverlap * 100)}%
+                      </span>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }

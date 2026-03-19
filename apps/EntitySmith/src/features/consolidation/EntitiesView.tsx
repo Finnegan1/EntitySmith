@@ -22,6 +22,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { useSchemaGraph } from "@/hooks/useSchemaGraph";
 import { useConsolidation } from "@/hooks/useConsolidation";
 import { SuggestionInspector } from "./SuggestionInspector";
+import { MergeScoreBadge } from "./MergeScoreBadge";
 import type {
   EntityTypeWithBindings,
   SchemaGraph,
@@ -37,6 +38,8 @@ interface InspectTarget {
   entityBSourceName?: string;
   /** When set, compare the merged entity type (all bindings) against entity B */
   entityTypeId?: string;
+  /** When set, the inspector shows an "Add to Entity" button. */
+  onAdd?: () => Promise<void>;
 }
 
 interface EntitiesViewProps {
@@ -351,6 +354,7 @@ export function EntitiesView({ schemaGraph: _externalGraph }: EntitiesViewProps)
           entityBSourceName={inspecting.entityBSourceName}
           entityTypeId={inspecting.entityTypeId}
           onClose={() => setInspecting(null)}
+          onAdd={inspecting.onAdd}
         />
       )}
     </div>
@@ -490,12 +494,29 @@ function EntityTypeCard({
                 Suggestions
               </p>
               <div className="space-y-1">
-                {suggestions.map(({ entity: se, score }) => {
-                  const pct = Math.round(score * 100);
+                {suggestions.map(({ entity: se }) => {
+                  const binding = et.bindings[0];
                   return (
-                    <div
+                    <button
                       key={`${se.sourceId}:${se.entityName}`}
-                      className="flex items-center gap-2 rounded px-2 py-1.5 text-sm"
+                      className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm text-left hover:bg-muted/40 transition-colors"
+                      onClick={() => {
+                        if (!binding) return;
+                        onInspect({
+                          entityASourceId: binding.sourceId,
+                          entityAName: et.entityType.name,
+                          entityASourceName: et.bindings.length > 1
+                            ? `${et.bindings.length} sources`
+                            : sourceEntities.find(
+                                (e) => e.sourceId === binding.sourceId && e.entityName === binding.entityName,
+                              )?.sourceName,
+                          entityBSourceId: se.sourceId,
+                          entityBName: se.entityName,
+                          entityBSourceName: se.sourceName,
+                          entityTypeId: et.entityType.id,
+                          onAdd: () => handleAddBinding(se),
+                        });
+                      }}
                     >
                       <span className="font-mono text-xs">{se.entityName}</span>
                       <span className="text-xs text-muted-foreground">{se.sourceName}</span>
@@ -503,57 +524,16 @@ function EntityTypeCard({
                       <span className="text-xs text-muted-foreground tabular-nums">
                         {se.rowCount.toLocaleString()} rows
                       </span>
-                      <div className="flex items-center gap-1">
-                        <div className="h-1.5 w-10 overflow-hidden rounded-full bg-muted">
-                          <div
-                            className="h-full rounded-full bg-primary transition-all"
-                            style={{ width: `${pct}%` }}
-                          />
-                        </div>
-                        <span className="text-[10px] text-muted-foreground tabular-nums w-7 text-right">
-                          {pct}%
-                        </span>
-                      </div>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-5 w-5 p-0 text-muted-foreground"
-                            onClick={() => {
-                              const binding = et.bindings[0];
-                              if (!binding) return;
-                              onInspect({
-                                entityASourceId: binding.sourceId,
-                                entityAName: et.entityType.name,
-                                entityASourceName: et.bindings.length > 1
-                                  ? `${et.bindings.length} sources`
-                                  : sourceEntities.find(
-                                      (e) => e.sourceId === binding.sourceId && e.entityName === binding.entityName,
-                                    )?.sourceName,
-                                entityBSourceId: se.sourceId,
-                                entityBName: se.entityName,
-                                entityBSourceName: se.sourceName,
-                                entityTypeId: et.entityType.id,
-                              });
-                            }}
-                          >
-                            <Eye size={11} />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent side="left">Inspect comparison</TooltipContent>
-                      </Tooltip>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-5 px-1.5 text-[10px] gap-0.5"
-                        onClick={() => handleAddBinding(se)}
-                        disabled={busy}
-                      >
-                        <Plus size={9} />
-                        Add
-                      </Button>
-                    </div>
+                      {binding && (
+                        <MergeScoreBadge
+                          entityASourceId={binding.sourceId}
+                          entityAName={binding.entityName}
+                          entityBSourceId={se.sourceId}
+                          entityBName={se.entityName}
+                          entityTypeId={et.entityType.id}
+                        />
+                      )}
+                    </button>
                   );
                 })}
               </div>
@@ -708,10 +688,9 @@ function CreateEntityDialog({
                 Similar tables found (may represent the same concept):
               </p>
               <div className="rounded-md border border-border overflow-hidden">
-                {similarEntities.map(({ entity: se, score }, i) => {
+                {similarEntities.map(({ entity: se }, i) => {
                   const key = `${se.sourceId}:${se.entityName}`;
                   const isChecked = selected.has(key);
-                  const pct = Math.round(score * 100);
                   return (
                     <button
                       key={key}
@@ -736,17 +715,12 @@ function CreateEntityDialog({
                       <span className="text-xs text-muted-foreground tabular-nums">
                         {se.rowCount.toLocaleString()}
                       </span>
-                      <div className="flex items-center gap-1">
-                        <div className="h-1.5 w-12 overflow-hidden rounded-full bg-muted">
-                          <div
-                            className="h-full rounded-full bg-primary"
-                            style={{ width: `${pct}%` }}
-                          />
-                        </div>
-                        <span className="text-[10px] text-muted-foreground tabular-nums w-7 text-right">
-                          {pct}%
-                        </span>
-                      </div>
+                      <MergeScoreBadge
+                        entityASourceId={startingEntity.sourceId}
+                        entityAName={startingEntity.entityName}
+                        entityBSourceId={se.sourceId}
+                        entityBName={se.entityName}
+                      />
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <Button
