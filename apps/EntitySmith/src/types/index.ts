@@ -339,3 +339,35 @@ export interface AttributeMapping {
   createdAt: string;
   updatedAt: string;
 }
+
+// ── Join Plan (Entity composition) ───────────────────────────────────────────
+
+export type JoinType = "left" | "inner" | "full_outer";
+
+export interface EntityTypeJoinStep {
+  id: EntityId;
+  entityTypeId: EntityId;
+  stepOrder: number;
+  sourceId: EntityId;
+  entityName: string;
+  joinType: JoinType;
+  createdAt: string;
+}
+
+export interface EntityTypeJoinKey {
+  id: EntityId;
+  joinStepId: EntityId;
+  leftColumn: string;
+  rightColumn: string;
+  keyOrder: number;
+}
+
+export interface EntityTypeJoinStepWithKeys {
+  step: EntityTypeJoinStep;
+  keys: EntityTypeJoinKey[];
+}
+
+export interface EntityTypeJoinPlan {
+  entityTypeId: EntityId;
+  steps: EntityTypeJoinStepWithKeys[];
+}

@@ -1,15 +1,12 @@
-import { useCallback, useState } from "react";
+import { useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import {
   Boxes,
-  ChevronDown,
   ChevronRight,
   Database,
-  Eye,
   Plus,
   RotateCcw,
   Sparkles,
-  Trash2,
-  Unlink,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -21,26 +18,12 @@ import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useSchemaGraph } from "@/hooks/useSchemaGraph";
 import { useConsolidation } from "@/hooks/useConsolidation";
-import { SuggestionInspector } from "./SuggestionInspector";
-import { MergeScoreBadge } from "./MergeScoreBadge";
+import { EntityEditorView } from "./EntityEditorView";
 import type {
   EntityTypeWithBindings,
   SchemaGraph,
   SourceEntitySummary,
 } from "@/types";
-
-interface InspectTarget {
-  entityASourceId: string;
-  entityAName: string;
-  entityASourceName?: string;
-  entityBSourceId: string;
-  entityBName: string;
-  entityBSourceName?: string;
-  /** When set, compare the merged entity type (all bindings) against entity B */
-  entityTypeId?: string;
-  /** When set, the inspector shows an "Add to Entity" button. */
-  onAdd?: () => Promise<void>;
-}
 
 interface EntitiesViewProps {
   schemaGraph: SchemaGraph | null;
@@ -52,121 +35,45 @@ export function EntitiesView({ schemaGraph: _externalGraph }: EntitiesViewProps)
     sourceEntities,
     isLoading,
     createEntityType,
-    deleteEntityType,
     bindSourceEntity,
-    unbindSourceEntity,
   } = useSchemaGraph();
 
   const {
-    similarityPairs,
     isComputing,
     computeSimilarities,
   } = useConsolidation();
 
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [editingEntityId, setEditingEntityId] = useState<string | null>(null);
   const [createFrom, setCreateFrom] = useState<SourceEntitySummary | null>(null);
-  const [showNewDialog, setShowNewDialog] = useState(false);
-  const [inspecting, setInspecting] = useState<InspectTarget | null>(null);
 
   const entityTypes = schemaGraph?.entityTypes ?? [];
   const unboundEntities = sourceEntities.filter((e) => !e.boundEntityTypeId);
 
-  const toggleExpand = useCallback((id: string) => {
-    setExpandedId((prev) => (prev === id ? null : id));
-  }, []);
+  // Find the entity type being edited
+  const editingEntity = editingEntityId
+    ? entityTypes.find((et) => et.entityType.id === editingEntityId)
+    : null;
 
-  // Find suggestions for an entity type based on similarity pairs
-  const getSuggestions = useCallback(
-    (et: EntityTypeWithBindings): { entity: SourceEntitySummary; score: number }[] => {
-      const boundNames = new Set(et.bindings.map((b) => `${b.sourceId}:${b.entityName}`));
-      const suggestions: { entity: SourceEntitySummary; score: number }[] = [];
+  // If editing, show the editor
+  if (editingEntity) {
+    return (
+      <EntityEditorView
+        entityType={editingEntity}
+        onBack={() => setEditingEntityId(null)}
+      />
+    );
+  }
 
-      for (const binding of et.bindings) {
-        for (const pair of similarityPairs) {
-          if (pair.status === "resolved") continue;
-          let matchKey: string | null = null;
-          let matchScore = 0;
-
-          if (
-            pair.entityASourceId === binding.sourceId &&
-            pair.entityAName === binding.entityName
-          ) {
-            matchKey = `${pair.entityBSourceId}:${pair.entityBName}`;
-            matchScore = pair.similarityScore;
-          } else if (
-            pair.entityBSourceId === binding.sourceId &&
-            pair.entityBName === binding.entityName
-          ) {
-            matchKey = `${pair.entityASourceId}:${pair.entityAName}`;
-            matchScore = pair.similarityScore;
-          }
-
-          if (matchKey && !boundNames.has(matchKey)) {
-            const se = sourceEntities.find(
-              (e) =>
-                `${e.sourceId}:${e.entityName}` === matchKey && !e.boundEntityTypeId,
-            );
-            if (se && !suggestions.some((s) => `${s.entity.sourceId}:${s.entity.entityName}` === matchKey)) {
-              suggestions.push({ entity: se, score: matchScore });
-            }
-          }
-        }
-      }
-
-      return suggestions.sort((a, b) => b.score - a.score);
-    },
-    [similarityPairs, sourceEntities],
-  );
-
-  // Get similarity suggestions for a specific source entity (used in create dialog)
-  const getSimilarTo = useCallback(
-    (sourceId: string, entityName: string): { entity: SourceEntitySummary; score: number }[] => {
-      const results: { entity: SourceEntitySummary; score: number }[] = [];
-
-      for (const pair of similarityPairs) {
-        if (pair.status === "resolved") continue;
-        let targetSourceId: string | null = null;
-        let targetName: string | null = null;
-        let score = 0;
-
-        if (pair.entityASourceId === sourceId && pair.entityAName === entityName) {
-          targetSourceId = pair.entityBSourceId;
-          targetName = pair.entityBName;
-          score = pair.similarityScore;
-        } else if (pair.entityBSourceId === sourceId && pair.entityBName === entityName) {
-          targetSourceId = pair.entityASourceId;
-          targetName = pair.entityAName;
-          score = pair.similarityScore;
-        }
-
-        if (targetSourceId && targetName) {
-          const se = sourceEntities.find(
-            (e) => e.sourceId === targetSourceId && e.entityName === targetName && !e.boundEntityTypeId,
-          );
-          if (se) {
-            results.push({ entity: se, score });
-          }
-        }
-      }
-
-      return results.sort((a, b) => b.score - a.score);
-    },
-    [similarityPairs, sourceEntities],
-  );
-
-  const totalRows = useCallback(
-    (et: EntityTypeWithBindings): number => {
-      let total = 0;
-      for (const binding of et.bindings) {
-        const se = sourceEntities.find(
-          (e) => e.sourceId === binding.sourceId && e.entityName === binding.entityName,
-        );
-        if (se) total += se.rowCount;
-      }
-      return total;
-    },
-    [sourceEntities],
-  );
+  const totalRows = (et: EntityTypeWithBindings): number => {
+    let total = 0;
+    for (const binding of et.bindings) {
+      const se = sourceEntities.find(
+        (e) => e.sourceId === binding.sourceId && e.entityName === binding.entityName,
+      );
+      if (se) total += se.rowCount;
+    }
+    return total;
+  };
 
   if (sourceEntities.length === 0 && entityTypes.length === 0 && !isLoading) {
     return (
@@ -209,23 +116,15 @@ export function EntitiesView({ schemaGraph: _externalGraph }: EntitiesViewProps)
             </Button>
           </TooltipTrigger>
           <TooltipContent side="bottom">
-            Scan source tables for overlapping column structures to find tables that may represent the same concept
+            Scan source tables for overlapping column structures
           </TooltipContent>
         </Tooltip>
-        <Button
-          size="sm"
-          className="h-7 gap-1.5 text-xs"
-          onClick={() => setShowNewDialog(true)}
-        >
-          <Plus size={12} />
-          New
-        </Button>
       </div>
 
       {/* Content */}
       <ScrollArea className="flex-1">
         <div className="p-4 space-y-6">
-          {/* Entity Types Section */}
+          {/* Entity Types */}
           {entityTypes.length > 0 && (
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2 px-1">
@@ -233,19 +132,32 @@ export function EntitiesView({ schemaGraph: _externalGraph }: EntitiesViewProps)
               </p>
               <div className="space-y-2">
                 {entityTypes.map((et) => (
-                  <EntityTypeCard
+                  <button
                     key={et.entityType.id}
-                    entityType={et}
-                    isExpanded={expandedId === et.entityType.id}
-                    onToggle={() => toggleExpand(et.entityType.id)}
-                    totalRows={totalRows(et)}
-                    suggestions={getSuggestions(et)}
-                    sourceEntities={sourceEntities}
-                    onBind={bindSourceEntity}
-                    onUnbind={unbindSourceEntity}
-                    onDelete={deleteEntityType}
-                    onInspect={setInspecting}
-                  />
+                    onClick={() => setEditingEntityId(et.entityType.id)}
+                    className="flex w-full items-center gap-3 rounded-md border border-border px-4 py-3 text-left hover:bg-muted/30 transition-colors group"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-sm">{et.entityType.name}</span>
+                        <Badge variant="secondary" className="text-[10px] h-4 px-1.5">
+                          {et.bindings.length} dataset{et.bindings.length !== 1 && "s"}
+                        </Badge>
+                      </div>
+                      <div className="flex items-center gap-2 mt-1 text-[10px] text-muted-foreground">
+                        {et.bindings.slice(0, 3).map((b) => (
+                          <span key={b.id} className="font-mono">{b.entityName}</span>
+                        ))}
+                        {et.bindings.length > 3 && (
+                          <span>+{et.bindings.length - 3} more</span>
+                        )}
+                      </div>
+                    </div>
+                    <span className="text-xs text-muted-foreground tabular-nums shrink-0">
+                      {totalRows(et).toLocaleString()} rows
+                    </span>
+                    <ChevronRight size={16} className="text-muted-foreground/50 group-hover:text-muted-foreground transition-colors shrink-0" />
+                  </button>
                 ))}
               </div>
             </div>
@@ -261,7 +173,6 @@ export function EntitiesView({ schemaGraph: _externalGraph }: EntitiesViewProps)
             </div>
           )}
 
-          {/* Separator */}
           {entityTypes.length > 0 && unboundEntities.length > 0 && <Separator />}
 
           {/* Unbound Source Tables */}
@@ -310,274 +221,32 @@ export function EntitiesView({ schemaGraph: _externalGraph }: EntitiesViewProps)
         </div>
       </ScrollArea>
 
-      {/* Create Entity Dialog — triggered from a specific source table */}
+      {/* Create Entity Dialog */}
       {createFrom && (
         <CreateEntityDialog
           startingEntity={createFrom}
-          similarEntities={getSimilarTo(createFrom.sourceId, createFrom.entityName)}
           onConfirm={async (name, additionalBindings) => {
             const et = await createEntityType(name);
             await bindSourceEntity(et.id, createFrom.sourceId, createFrom.entityName);
+            // Add the starting dataset as step 0 (base) in the join plan
+            await invoke("add_join_step", {
+              entityTypeId: et.id,
+              stepOrder: 0,
+              sourceId: createFrom.sourceId,
+              entityName: createFrom.entityName,
+              joinType: "left",
+            });
             for (const binding of additionalBindings) {
               await bindSourceEntity(et.id, binding.sourceId, binding.entityName);
             }
             setCreateFrom(null);
+            // Navigate to the new entity editor
+            setEditingEntityId(et.id);
           }}
           onCancel={() => setCreateFrom(null)}
-          onInspect={setInspecting}
         />
       )}
 
-      {/* New Entity Dialog — from toolbar, no pre-selected table */}
-      {showNewDialog && (
-        <NewEntityDialog
-          unboundEntities={unboundEntities}
-          onConfirm={async (name, selectedEntities) => {
-            const et = await createEntityType(name);
-            for (const se of selectedEntities) {
-              await bindSourceEntity(et.id, se.sourceId, se.entityName);
-            }
-            setShowNewDialog(false);
-          }}
-          onCancel={() => setShowNewDialog(false)}
-        />
-      )}
-
-      {/* Suggestion Inspector */}
-      {inspecting && (
-        <SuggestionInspector
-          entityASourceId={inspecting.entityASourceId}
-          entityAName={inspecting.entityAName}
-          entityASourceName={inspecting.entityASourceName}
-          entityBSourceId={inspecting.entityBSourceId}
-          entityBName={inspecting.entityBName}
-          entityBSourceName={inspecting.entityBSourceName}
-          entityTypeId={inspecting.entityTypeId}
-          onClose={() => setInspecting(null)}
-          onAdd={inspecting.onAdd}
-        />
-      )}
-    </div>
-  );
-}
-
-// ── Entity Type Card ──────────────────────────────────────────────────────────
-
-function EntityTypeCard({
-  entityType: et,
-  isExpanded,
-  onToggle,
-  totalRows,
-  suggestions,
-  sourceEntities,
-  onBind,
-  onUnbind,
-  onDelete,
-  onInspect,
-}: {
-  entityType: EntityTypeWithBindings;
-  isExpanded: boolean;
-  onToggle: () => void;
-  totalRows: number;
-  suggestions: { entity: SourceEntitySummary; score: number }[];
-  sourceEntities: SourceEntitySummary[];
-  onBind: (entityTypeId: string, sourceId: string, entityName: string) => Promise<unknown>;
-  onUnbind: (entityTypeId: string, sourceId: string, entityName: string) => Promise<void>;
-  onDelete: (id: string) => Promise<void>;
-  onInspect: (target: InspectTarget) => void;
-}) {
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const [busy, setBusy] = useState(false);
-
-  const handleAddBinding = async (se: SourceEntitySummary) => {
-    setBusy(true);
-    try {
-      await onBind(et.entityType.id, se.sourceId, se.entityName);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handleRemoveBinding = async (sourceId: string, entityName: string) => {
-    setBusy(true);
-    try {
-      await onUnbind(et.entityType.id, sourceId, entityName);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handleDelete = async () => {
-    setBusy(true);
-    try {
-      await onDelete(et.entityType.id);
-    } finally {
-      setBusy(false);
-      setConfirmDelete(false);
-    }
-  };
-
-  return (
-    <div className="rounded-md border border-border overflow-hidden">
-      {/* Header */}
-      <button
-        onClick={onToggle}
-        className="flex w-full items-center gap-2 px-3 py-2.5 text-left hover:bg-muted/30 transition-colors"
-      >
-        {isExpanded ? (
-          <ChevronDown size={14} className="shrink-0 text-muted-foreground" />
-        ) : (
-          <ChevronRight size={14} className="shrink-0 text-muted-foreground" />
-        )}
-        <span className="font-medium text-sm">{et.entityType.name}</span>
-        <Badge variant="secondary" className="text-[10px] h-4 px-1.5 ml-1">
-          {et.bindings.length} source{et.bindings.length !== 1 && "s"}
-        </Badge>
-        {suggestions.length > 0 && (
-          <Badge variant="outline" className="text-[10px] h-4 px-1.5 border-amber-500/50 text-amber-600">
-            {suggestions.length} suggestion{suggestions.length !== 1 && "s"}
-          </Badge>
-        )}
-        <div className="flex-1" />
-        <span className="text-xs text-muted-foreground tabular-nums">
-          {totalRows.toLocaleString()} rows
-        </span>
-      </button>
-
-      {/* Expanded content */}
-      {isExpanded && (
-        <div className="border-t border-border bg-muted/10 px-3 py-3 space-y-3">
-          {/* Bound sources */}
-          <div>
-            <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground mb-1.5">
-              Bound Sources
-            </p>
-            <div className="space-y-1">
-              {et.bindings.map((binding) => {
-                const se = sourceEntities.find(
-                  (e) => e.sourceId === binding.sourceId && e.entityName === binding.entityName,
-                );
-                return (
-                  <div
-                    key={binding.id}
-                    className="flex items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted/40 group"
-                  >
-                    <span className="font-mono text-xs">{binding.entityName}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {se?.sourceName ?? binding.sourceId.slice(0, 8)}
-                    </span>
-                    <div className="flex-1" />
-                    {se && (
-                      <span className="text-xs text-muted-foreground tabular-nums">
-                        {se.rowCount.toLocaleString()} rows
-                      </span>
-                    )}
-                    {et.bindings.length > 1 && (
-                      <button
-                        onClick={() => handleRemoveBinding(binding.sourceId, binding.entityName)}
-                        disabled={busy}
-                        className="opacity-0 group-hover:opacity-100 rounded p-0.5 text-muted-foreground hover:text-destructive transition-all disabled:opacity-50"
-                      >
-                        <Unlink size={12} />
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Suggestions */}
-          {suggestions.length > 0 && (
-            <div>
-              <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground mb-1.5">
-                Suggestions
-              </p>
-              <div className="space-y-1">
-                {suggestions.map(({ entity: se }) => {
-                  const binding = et.bindings[0];
-                  return (
-                    <button
-                      key={`${se.sourceId}:${se.entityName}`}
-                      className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm text-left hover:bg-muted/40 transition-colors"
-                      onClick={() => {
-                        if (!binding) return;
-                        onInspect({
-                          entityASourceId: binding.sourceId,
-                          entityAName: et.entityType.name,
-                          entityASourceName: et.bindings.length > 1
-                            ? `${et.bindings.length} sources`
-                            : sourceEntities.find(
-                                (e) => e.sourceId === binding.sourceId && e.entityName === binding.entityName,
-                              )?.sourceName,
-                          entityBSourceId: se.sourceId,
-                          entityBName: se.entityName,
-                          entityBSourceName: se.sourceName,
-                          entityTypeId: et.entityType.id,
-                          onAdd: () => handleAddBinding(se),
-                        });
-                      }}
-                    >
-                      <span className="font-mono text-xs">{se.entityName}</span>
-                      <span className="text-xs text-muted-foreground">{se.sourceName}</span>
-                      <div className="flex-1" />
-                      <span className="text-xs text-muted-foreground tabular-nums">
-                        {se.rowCount.toLocaleString()} rows
-                      </span>
-                      {binding && (
-                        <MergeScoreBadge
-                          entityASourceId={binding.sourceId}
-                          entityAName={binding.entityName}
-                          entityBSourceId={se.sourceId}
-                          entityBName={se.entityName}
-                          entityTypeId={et.entityType.id}
-                        />
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Actions */}
-          <div className="flex items-center gap-2 pt-1">
-            <div className="flex-1" />
-            {confirmDelete ? (
-              <div className="flex items-center gap-2 text-xs">
-                <span className="text-destructive">Delete "{et.entityType.name}"?</span>
-                <Button
-                  size="sm"
-                  variant="destructive"
-                  className="h-6 px-2 text-[11px]"
-                  onClick={handleDelete}
-                  disabled={busy}
-                >
-                  Delete
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-6 px-2 text-[11px]"
-                  onClick={() => setConfirmDelete(false)}
-                >
-                  Cancel
-                </Button>
-              </div>
-            ) : (
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-6 px-2 text-[11px] text-muted-foreground"
-                onClick={() => setConfirmDelete(true)}
-              >
-                <Trash2 size={11} className="mr-1" />
-                Delete
-              </Button>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -586,55 +255,35 @@ function EntityTypeCard({
 
 function CreateEntityDialog({
   startingEntity,
-  similarEntities,
   onConfirm,
   onCancel,
-  onInspect,
 }: {
   startingEntity: SourceEntitySummary;
-  similarEntities: { entity: SourceEntitySummary; score: number }[];
   onConfirm: (name: string, additionalBindings: SourceEntitySummary[]) => Promise<void>;
   onCancel: () => void;
-  onInspect: (target: InspectTarget) => void;
 }) {
   const suggestedName = toTitleCase(startingEntity.entityName);
   const [name, setName] = useState(suggestedName);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const toggleSelection = (se: SourceEntitySummary) => {
-    const key = `${se.sourceId}:${se.entityName}`;
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  };
 
   const handleConfirm = async () => {
     if (!name.trim()) return;
     setIsSubmitting(true);
     setError(null);
     try {
-      const additional = similarEntities
-        .filter(({ entity: se }) => selected.has(`${se.sourceId}:${se.entityName}`))
-        .map(({ entity }) => entity);
-      await onConfirm(name.trim(), additional);
+      // Create with just the starting entity — additional datasets added in the editor
+      await onConfirm(name.trim(), []);
     } catch (e) {
       setError(String(e));
       setIsSubmitting(false);
     }
   };
 
-  const selectedCount = selected.size;
-
   return (
     <>
       <div className="fixed inset-0 z-50 bg-black/50" onClick={onCancel} />
-      <div className="fixed inset-x-0 top-1/2 z-50 mx-auto w-full max-w-[520px] -translate-y-1/2 rounded-lg border border-border bg-background shadow-xl">
-        {/* Header */}
+      <div className="fixed inset-x-0 top-1/2 z-50 mx-auto w-full max-w-[420px] -translate-y-1/2 rounded-lg border border-border bg-background shadow-xl">
         <div className="flex items-center justify-between border-b border-border px-5 py-3">
           <h2 className="text-sm font-semibold">Create Entity Type</h2>
           <button onClick={onCancel} className="rounded p-1 hover:bg-muted">
@@ -643,14 +292,12 @@ function CreateEntityDialog({
         </div>
 
         <div className="p-5 space-y-4">
-          {/* Error */}
           {error && (
             <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
               {error}
             </div>
           )}
 
-          {/* Starting from */}
           <div className="rounded-md border border-border bg-muted/20 px-3 py-2">
             <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">
               Starting from
@@ -665,7 +312,6 @@ function CreateEntityDialog({
             </div>
           </div>
 
-          {/* Entity type name */}
           <div className="space-y-1.5">
             <Label className="text-xs">Entity Type Name</Label>
             <Input
@@ -673,101 +319,16 @@ function CreateEntityDialog({
               onChange={(e) => setName(e.target.value)}
               className="h-8 text-sm"
               autoFocus
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleConfirm();
+              }}
             />
             <p className="text-[10px] text-muted-foreground">
-              Auto-suggested from table name. Edit freely.
+              You can add more datasets and configure joins in the entity editor.
             </p>
           </div>
-
-          <Separator />
-
-          {/* Similar tables */}
-          {similarEntities.length > 0 ? (
-            <div className="space-y-2">
-              <p className="text-xs text-muted-foreground">
-                Similar tables found (may represent the same concept):
-              </p>
-              <div className="rounded-md border border-border overflow-hidden">
-                {similarEntities.map(({ entity: se }, i) => {
-                  const key = `${se.sourceId}:${se.entityName}`;
-                  const isChecked = selected.has(key);
-                  return (
-                    <button
-                      key={key}
-                      onClick={() => toggleSelection(se)}
-                      className={`flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors hover:bg-muted/30 ${
-                        i < similarEntities.length - 1 ? "border-b border-border/50" : ""
-                      }`}
-                    >
-                      {/* Checkbox */}
-                      <div
-                        className={`h-4 w-4 shrink-0 rounded border flex items-center justify-center text-[10px] ${
-                          isChecked
-                            ? "border-primary bg-primary text-primary-foreground"
-                            : "border-muted-foreground/30"
-                        }`}
-                      >
-                        {isChecked && "✓"}
-                      </div>
-                      <span className="font-mono text-xs">{se.entityName}</span>
-                      <span className="text-xs text-muted-foreground">{se.sourceName}</span>
-                      <div className="flex-1" />
-                      <span className="text-xs text-muted-foreground tabular-nums">
-                        {se.rowCount.toLocaleString()}
-                      </span>
-                      <MergeScoreBadge
-                        entityASourceId={startingEntity.sourceId}
-                        entityAName={startingEntity.entityName}
-                        entityBSourceId={se.sourceId}
-                        entityBName={se.entityName}
-                      />
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-5 w-5 p-0 text-muted-foreground shrink-0"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onInspect({
-                                entityASourceId: startingEntity.sourceId,
-                                entityAName: startingEntity.entityName,
-                                entityASourceName: startingEntity.sourceName,
-                                entityBSourceId: se.sourceId,
-                                entityBName: se.entityName,
-                                entityBSourceName: se.sourceName,
-                              });
-                            }}
-                          >
-                            <Eye size={11} />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent side="left">Inspect comparison</TooltipContent>
-                      </Tooltip>
-                    </button>
-                  );
-                })}
-              </div>
-              {selectedCount > 0 && (
-                <p className="text-[10px] text-muted-foreground">
-                  {selectedCount} additional source{selectedCount !== 1 && "s"} selected.
-                  Attribute mapping can be configured after creation.
-                </p>
-              )}
-            </div>
-          ) : (
-            <div className="text-center py-3">
-              <p className="text-xs text-muted-foreground">
-                No similar tables detected.
-              </p>
-              <p className="text-[10px] text-muted-foreground mt-0.5">
-                You can add more source bindings later, or run "Find Similar" first.
-              </p>
-            </div>
-          )}
         </div>
 
-        {/* Footer */}
         <div className="flex items-center justify-end gap-2 border-t border-border px-5 py-3">
           <Button size="sm" variant="ghost" onClick={onCancel}>
             Cancel
@@ -777,140 +338,7 @@ function CreateEntityDialog({
             onClick={handleConfirm}
             disabled={!name.trim() || isSubmitting}
           >
-            {isSubmitting ? "Creating…" : "Create Type"}
-          </Button>
-        </div>
-      </div>
-    </>
-  );
-}
-
-// ── New Entity Dialog (from toolbar, no pre-selected table) ───────────────────
-
-function NewEntityDialog({
-  unboundEntities,
-  onConfirm,
-  onCancel,
-}: {
-  unboundEntities: SourceEntitySummary[];
-  onConfirm: (name: string, selectedEntities: SourceEntitySummary[]) => Promise<void>;
-  onCancel: () => void;
-}) {
-  const [name, setName] = useState("");
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const toggleSelection = (se: SourceEntitySummary) => {
-    const key = `${se.sourceId}:${se.entityName}`;
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  };
-
-  const handleConfirm = async () => {
-    if (!name.trim() || selected.size === 0) return;
-    setIsSubmitting(true);
-    setError(null);
-    try {
-      const entities = unboundEntities.filter((se) =>
-        selected.has(`${se.sourceId}:${se.entityName}`),
-      );
-      await onConfirm(name.trim(), entities);
-    } catch (e) {
-      setError(String(e));
-      setIsSubmitting(false);
-    }
-  };
-
-  return (
-    <>
-      <div className="fixed inset-0 z-50 bg-black/50" onClick={onCancel} />
-      <div className="fixed inset-x-0 top-1/2 z-50 mx-auto w-full max-w-[520px] -translate-y-1/2 rounded-lg border border-border bg-background shadow-xl">
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-border px-5 py-3">
-          <h2 className="text-sm font-semibold">New Entity Type</h2>
-          <button onClick={onCancel} className="rounded p-1 hover:bg-muted">
-            <X size={16} />
-          </button>
-        </div>
-
-        <div className="p-5 space-y-4">
-          {error && (
-            <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-              {error}
-            </div>
-          )}
-
-          <div className="space-y-1.5">
-            <Label className="text-xs">Entity Type Name</Label>
-            <Input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Customer, Product, Order"
-              className="h-8 text-sm"
-              autoFocus
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <Label className="text-xs">
-              Bind source tables {selected.size > 0 && `(${selected.size} selected)`}
-            </Label>
-            {unboundEntities.length > 0 ? (
-              <div className="rounded-md border border-border overflow-hidden max-h-[240px] overflow-y-auto">
-                {unboundEntities.map((se, i) => {
-                  const key = `${se.sourceId}:${se.entityName}`;
-                  const isChecked = selected.has(key);
-                  return (
-                    <button
-                      key={key}
-                      onClick={() => toggleSelection(se)}
-                      className={`flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors hover:bg-muted/30 ${
-                        i < unboundEntities.length - 1 ? "border-b border-border/50" : ""
-                      }`}
-                    >
-                      <div
-                        className={`h-4 w-4 shrink-0 rounded border flex items-center justify-center text-[10px] ${
-                          isChecked
-                            ? "border-primary bg-primary text-primary-foreground"
-                            : "border-muted-foreground/30"
-                        }`}
-                      >
-                        {isChecked && "✓"}
-                      </div>
-                      <span className="font-mono text-xs">{se.entityName}</span>
-                      <span className="text-xs text-muted-foreground">{se.sourceName}</span>
-                      <div className="flex-1" />
-                      <span className="text-xs text-muted-foreground tabular-nums">
-                        {se.rowCount.toLocaleString()} rows
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            ) : (
-              <p className="text-xs text-muted-foreground py-2">
-                No unbound source tables available.
-              </p>
-            )}
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="flex items-center justify-end gap-2 border-t border-border px-5 py-3">
-          <Button size="sm" variant="ghost" onClick={onCancel}>
-            Cancel
-          </Button>
-          <Button
-            size="sm"
-            onClick={handleConfirm}
-            disabled={!name.trim() || selected.size === 0 || isSubmitting}
-          >
-            {isSubmitting ? "Creating…" : "Create Type"}
+            {isSubmitting ? "Creating…" : "Create & Open Editor"}
           </Button>
         </div>
       </div>
@@ -921,8 +349,7 @@ function NewEntityDialog({
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function toTitleCase(s: string): string {
-  // "user_accounts" → "UserAccount", "customers" → "Customer"
-  const stripped = s.replace(/s$/, ""); // naive de-pluralize
+  const stripped = s.replace(/s$/, "");
   return stripped
     .split(/[_\-\s]+/)
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())

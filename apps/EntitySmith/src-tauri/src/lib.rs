@@ -84,6 +84,12 @@ pub fn run() {
             commands::attribute_mapping::upsert_attribute_mapping,
             commands::attribute_mapping::delete_attribute_mapping,
             commands::attribute_mapping::auto_generate_attribute_mappings,
+            commands::join_plan::get_join_plan,
+            commands::join_plan::add_join_step,
+            commands::join_plan::remove_join_step,
+            commands::join_plan::reorder_join_steps,
+            commands::join_plan::update_join_step_type,
+            commands::join_plan::set_join_keys,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

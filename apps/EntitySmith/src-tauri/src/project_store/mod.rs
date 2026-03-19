@@ -282,7 +282,31 @@ ALTER TABLE entity_types ADD COLUMN rdf_class TEXT;
 ALTER TABLE entity_types ADD COLUMN subject_column TEXT;
 ";
 
-const CURRENT_SCHEMA_VERSION: u32 = 7;
+const SCHEMA_V8: &str = "
+CREATE TABLE IF NOT EXISTS entity_type_join_steps (
+    id              TEXT PRIMARY KEY NOT NULL,
+    entity_type_id  TEXT NOT NULL REFERENCES entity_types(id) ON DELETE CASCADE,
+    step_order      INTEGER NOT NULL,
+    source_id       TEXT NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+    entity_name     TEXT NOT NULL,
+    join_type       TEXT NOT NULL DEFAULT 'left',
+    created_at      TEXT NOT NULL,
+    UNIQUE(entity_type_id, step_order)
+);
+CREATE INDEX IF NOT EXISTS join_steps_entity_type ON entity_type_join_steps(entity_type_id);
+
+CREATE TABLE IF NOT EXISTS entity_type_join_keys (
+    id              TEXT PRIMARY KEY NOT NULL,
+    join_step_id    TEXT NOT NULL REFERENCES entity_type_join_steps(id) ON DELETE CASCADE,
+    left_column     TEXT NOT NULL,
+    right_column    TEXT NOT NULL,
+    key_order       INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(join_step_id, left_column, right_column)
+);
+CREATE INDEX IF NOT EXISTS join_keys_step ON entity_type_join_keys(join_step_id);
+";
+
+const CURRENT_SCHEMA_VERSION: u32 = 8;
 
 // ── ProjectStore ──────────────────────────────────────────────────────────────
 
@@ -2600,6 +2624,179 @@ impl ProjectStore {
                 })
             })
     }
+
+    // ── Join Plan CRUD ────────────────────────────────────────────────────────
+
+    /// Get the full join plan for an entity type.
+    pub fn get_join_plan(&self, entity_type_id: &str) -> Result<Vec<(crate::domain::EntityTypeJoinStep, Vec<crate::domain::EntityTypeJoinKey>)>, String> {
+        use crate::domain::{EntityTypeJoinStep, EntityTypeJoinKey};
+
+        let mut stmt = self.conn
+            .prepare(
+                "SELECT id, entity_type_id, step_order, source_id, entity_name, join_type, created_at
+                 FROM entity_type_join_steps
+                 WHERE entity_type_id = ?1
+                 ORDER BY step_order ASC",
+            )
+            .map_err(|e| format!("Failed to prepare join steps query: {e}"))?;
+
+        let steps: Vec<EntityTypeJoinStep> = stmt
+            .query_map(params![entity_type_id], |row| {
+                Ok(EntityTypeJoinStep {
+                    id: row.get(0)?,
+                    entity_type_id: row.get(1)?,
+                    step_order: row.get(2)?,
+                    source_id: row.get(3)?,
+                    entity_name: row.get(4)?,
+                    join_type: row.get(5)?,
+                    created_at: row.get(6)?,
+                })
+            })
+            .map_err(|e| format!("Failed to query join steps: {e}"))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("Failed to read join step row: {e}"))?;
+
+        let mut result = Vec::new();
+        for step in steps {
+            let mut key_stmt = self.conn
+                .prepare(
+                    "SELECT id, join_step_id, left_column, right_column, key_order
+                     FROM entity_type_join_keys
+                     WHERE join_step_id = ?1
+                     ORDER BY key_order ASC",
+                )
+                .map_err(|e| format!("Failed to prepare join keys query: {e}"))?;
+
+            let keys: Vec<EntityTypeJoinKey> = key_stmt
+                .query_map(params![step.id], |row| {
+                    Ok(EntityTypeJoinKey {
+                        id: row.get(0)?,
+                        join_step_id: row.get(1)?,
+                        left_column: row.get(2)?,
+                        right_column: row.get(3)?,
+                        key_order: row.get(4)?,
+                    })
+                })
+                .map_err(|e| format!("Failed to query join keys: {e}"))?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| format!("Failed to read join key row: {e}"))?;
+
+            result.push((step, keys));
+        }
+
+        Ok(result)
+    }
+
+    /// Add a join step. Returns the created step.
+    pub fn add_join_step(
+        &self,
+        entity_type_id: &str,
+        step_order: i32,
+        source_id: &str,
+        entity_name: &str,
+        join_type: &str,
+    ) -> Result<crate::domain::EntityTypeJoinStep, String> {
+        let id = Uuid::new_v4().to_string();
+        let now = Utc::now().to_rfc3339();
+
+        self.conn
+            .execute(
+                "INSERT INTO entity_type_join_steps (id, entity_type_id, step_order, source_id, entity_name, join_type, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                params![id, entity_type_id, step_order, source_id, entity_name, join_type, now],
+            )
+            .map_err(|e| format!("Failed to insert join step: {e}"))?;
+
+        Ok(crate::domain::EntityTypeJoinStep {
+            id,
+            entity_type_id: entity_type_id.to_string(),
+            step_order,
+            source_id: source_id.to_string(),
+            entity_name: entity_name.to_string(),
+            join_type: join_type.to_string(),
+            created_at: now,
+        })
+    }
+
+    /// Remove a join step and its keys (cascade).
+    pub fn remove_join_step(&self, step_id: &str) -> Result<(), String> {
+        self.conn
+            .execute(
+                "DELETE FROM entity_type_join_steps WHERE id = ?1",
+                params![step_id],
+            )
+            .map_err(|e| format!("Failed to delete join step: {e}"))?;
+        Ok(())
+    }
+
+    /// Reorder join steps. `ordered_step_ids` is the list of step IDs in the desired order.
+    pub fn reorder_join_steps(
+        &self,
+        entity_type_id: &str,
+        ordered_step_ids: &[String],
+    ) -> Result<(), String> {
+        for (i, step_id) in ordered_step_ids.iter().enumerate() {
+            self.conn
+                .execute(
+                    "UPDATE entity_type_join_steps SET step_order = ?1 WHERE id = ?2 AND entity_type_id = ?3",
+                    params![i as i32, step_id, entity_type_id],
+                )
+                .map_err(|e| format!("Failed to reorder join step: {e}"))?;
+        }
+        Ok(())
+    }
+
+    /// Update the join type for a step.
+    pub fn update_join_step_type(
+        &self,
+        step_id: &str,
+        join_type: &str,
+    ) -> Result<(), String> {
+        self.conn
+            .execute(
+                "UPDATE entity_type_join_steps SET join_type = ?1 WHERE id = ?2",
+                params![join_type, step_id],
+            )
+            .map_err(|e| format!("Failed to update join step type: {e}"))?;
+        Ok(())
+    }
+
+    /// Set the join keys for a step. Replaces all existing keys.
+    pub fn set_join_keys(
+        &self,
+        join_step_id: &str,
+        keys: &[(String, String)], // (left_column, right_column)
+    ) -> Result<Vec<crate::domain::EntityTypeJoinKey>, String> {
+        // Delete existing keys
+        self.conn
+            .execute(
+                "DELETE FROM entity_type_join_keys WHERE join_step_id = ?1",
+                params![join_step_id],
+            )
+            .map_err(|e| format!("Failed to clear join keys: {e}"))?;
+
+        let mut result = Vec::new();
+        for (i, (left, right)) in keys.iter().enumerate() {
+            let id = Uuid::new_v4().to_string();
+            self.conn
+                .execute(
+                    "INSERT INTO entity_type_join_keys (id, join_step_id, left_column, right_column, key_order)
+                     VALUES (?1, ?2, ?3, ?4, ?5)",
+                    params![id, join_step_id, left, right, i as i32],
+                )
+                .map_err(|e| format!("Failed to insert join key: {e}"))?;
+
+            result.push(crate::domain::EntityTypeJoinKey {
+                id,
+                join_step_id: join_step_id.to_string(),
+                left_column: left.clone(),
+                right_column: right.clone(),
+                key_order: i as i32,
+            });
+        }
+
+        Ok(result)
+    }
 }
 
 // ── Migrations ─────────────────────────────────────────────────────────────
@@ -2694,6 +2891,16 @@ fn apply_migrations(conn: &Connection) -> Result<(), String> {
         }
         conn.execute(
             "UPDATE _meta SET value = '7' WHERE key = 'schema_version'",
+            [],
+        )
+        .map_err(|e| format!("Failed to update schema version: {e}"))?;
+    }
+
+    if version < 8 {
+        conn.execute_batch(SCHEMA_V8)
+            .map_err(|e| format!("Migration 8 failed: {e}"))?;
+        conn.execute(
+            "UPDATE _meta SET value = '8' WHERE key = 'schema_version'",
             [],
         )
         .map_err(|e| format!("Failed to update schema version: {e}"))?;

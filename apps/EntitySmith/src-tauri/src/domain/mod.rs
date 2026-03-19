@@ -592,6 +592,48 @@ pub struct AttributeMapping {
     pub updated_at: String,
 }
 
+/// One step in the join chain that composes an entity type from multiple sources.
+/// Step 0 is the base table (no join keys needed); steps 1+ are joins.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EntityTypeJoinStep {
+    pub id: EntityId,
+    pub entity_type_id: EntityId,
+    pub step_order: i32,
+    pub source_id: EntityId,
+    pub entity_name: String,
+    pub join_type: String, // "left", "inner", "full_outer"
+    pub created_at: String,
+}
+
+/// A single join key pair for a join step (step_order > 0).
+/// Multiple keys form a composite join condition.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EntityTypeJoinKey {
+    pub id: EntityId,
+    pub join_step_id: EntityId,
+    pub left_column: String,
+    pub right_column: String,
+    pub key_order: i32,
+}
+
+/// Full join plan for an entity type: ordered steps + their keys.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EntityTypeJoinPlan {
+    pub entity_type_id: EntityId,
+    pub steps: Vec<EntityTypeJoinStepWithKeys>,
+}
+
+/// A join step together with its key columns.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EntityTypeJoinStepWithKeys {
+    pub step: EntityTypeJoinStep,
+    pub keys: Vec<EntityTypeJoinKey>,
+}
+
 /// How two attributes from different source entities align.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

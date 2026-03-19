@@ -1,5 +1,6 @@
 pub mod attribute_mapping;
 pub mod consolidation;
+pub mod join_plan;
 pub mod jobs;
 pub mod profiling;
 pub mod project;
