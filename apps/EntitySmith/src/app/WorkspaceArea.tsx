@@ -1,10 +1,10 @@
 import {
+  Boxes,
+  Cable,
   Database,
   FileOutput,
   FolderOpen,
   GitFork,
-  Inbox,
-  Layers,
   Link,
   PlusCircle,
 } from "lucide-react";
@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { SourcesView } from "@/features/sources/SourcesView";
 import { ProposalsView } from "@/features/proposals/ProposalsView";
 import { SchemaGraphView } from "@/features/schema-graph";
-import { ConsolidationView } from "@/features/consolidation/ConsolidationView";
+import { EntitiesView } from "@/features/consolidation/EntitiesView";
 import type { AppView, EntityTypeWithBindings, Proposal, ProjectState, SchemaGraph, SourceDescriptor } from "@/types";
 
 interface WorkspaceAreaProps {
@@ -64,20 +64,20 @@ export function WorkspaceArea({
             selectedSourceId={selectedSourceId}
             onSourceSelect={onSourceSelect}
           />
-        ) : activeView === "proposals" ? (
-          <ProposalsView
-            projectId={project.id}
-            selectedProposalId={selectedProposalId}
-            onProposalSelect={onProposalSelect}
-          />
+        ) : activeView === "entities" ? (
+          <EntitiesView schemaGraph={schemaGraph} />
         ) : activeView === "schema-graph" ? (
           <SchemaGraphView
             projectId={project.id}
             selectedEntityTypeId={selectedEntityTypeId}
             onEntityTypeSelect={onEntityTypeSelect}
           />
-        ) : activeView === "consolidation" ? (
-          <ConsolidationView schemaGraph={schemaGraph} />
+        ) : activeView === "connections" ? (
+          <ProposalsView
+            projectId={project.id}
+            selectedProposalId={selectedProposalId}
+            onProposalSelect={onProposalSelect}
+          />
         ) : (
           <div className="flex h-full items-center justify-center p-6">
             <EmptyViewState view={activeView} />
@@ -158,14 +158,14 @@ const WORKFLOW_STEPS = [
     icon: <Database size={14} />,
   },
   {
-    label: "Build Schema Graph",
-    description: "Canonical entity types and relationships",
-    icon: <GitFork size={14} />,
+    label: "Define Entities",
+    description: "Merge and consolidate source tables",
+    icon: <Boxes size={14} />,
   },
   {
-    label: "Review Proposals",
-    description: "Accept or reject system suggestions",
-    icon: <Inbox size={14} />,
+    label: "Define Connections",
+    description: "Accept or reject detected relationships",
+    icon: <Cable size={14} />,
   },
   {
     label: "Export",
@@ -179,9 +179,9 @@ const WORKFLOW_STEPS = [
 const VIEW_META: Record<AppView, { title: string }> = {
   project: { title: "Project" },
   sources: { title: "Sources" },
+  entities: { title: "Entities" },
   "schema-graph": { title: "Schema Graph" },
-  proposals: { title: "Proposals" },
-  consolidation: { title: "Consolidation" },
+  connections: { title: "Connections" },
   identity: { title: "Identity Resolution" },
   export: { title: "Export" },
   settings: { title: "Settings" },
@@ -213,21 +213,20 @@ const VIEW_EMPTY: Record<
     message: "No sources registered",
     detail: "Add a SQLite, JSON, or CSV file to begin profiling.",
   },
+  entities: {
+    icon: <Boxes size={28} />,
+    message: "No entities yet",
+    detail: "Profile sources and compute similarities to define entity types.",
+  },
   "schema-graph": {
     icon: <GitFork size={28} />,
     message: "Schema graph is empty",
-    detail:
-      "Entity types appear here once sources are profiled and proposals accepted.",
+    detail: "Entity types appear here once you define them in the Entities step.",
   },
-  proposals: {
-    icon: <Inbox size={28} />,
-    message: "No proposals yet",
-    detail: "Run profiling on registered sources to generate proposals.",
-  },
-  consolidation: {
-    icon: <Layers size={28} />,
-    message: "Consolidation",
-    detail: "Compare and merge similar entities across sources.",
+  connections: {
+    icon: <Cable size={28} />,
+    message: "No connections yet",
+    detail: "Run analysis to detect relationships between entity types.",
   },
   identity: {
     icon: <Link size={28} />,

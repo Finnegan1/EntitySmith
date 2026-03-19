@@ -95,6 +95,47 @@ impl SourceAdapter for CsvAdapter {
             }],
         })
     }
+
+    fn sample_rows(
+        &self,
+        _entity_name: &str,
+        limit: usize,
+    ) -> Result<Vec<HashMap<String, Option<String>>>, String> {
+        let mut rdr = csv::ReaderBuilder::new()
+            .flexible(true)
+            .trim(csv::Trim::All)
+            .from_path(&self.path)
+            .map_err(|e| format!("Cannot open CSV file: {e}"))?;
+
+        let headers: Vec<String> = rdr
+            .headers()
+            .map_err(|e| format!("Cannot read CSV headers: {e}"))?
+            .iter()
+            .map(|h| h.to_string())
+            .collect();
+
+        let mut rows = Vec::new();
+        for result in rdr.records() {
+            if rows.len() >= limit {
+                break;
+            }
+            let record = result.map_err(|e| format!("CSV read error: {e}"))?;
+            let mut map = HashMap::new();
+            for (i, header) in headers.iter().enumerate() {
+                let val = record.get(i).map(|s| {
+                    let trimmed = s.trim();
+                    if trimmed.is_empty() {
+                        None
+                    } else {
+                        Some(trimmed.to_string())
+                    }
+                }).unwrap_or(None);
+                map.insert(header.clone(), val);
+            }
+            rows.push(map);
+        }
+        Ok(rows)
+    }
 }
 
 // ── Column statistics ─────────────────────────────────────────────────────────

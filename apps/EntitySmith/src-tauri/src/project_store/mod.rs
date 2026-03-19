@@ -2477,7 +2477,7 @@ impl ProjectStore {
     }
 
     /// Fetch a single source by ID.
-    fn get_source(&self, source_id: &str) -> Result<SourceDescriptor, String> {
+    pub fn get_source(&self, source_id: &str) -> Result<SourceDescriptor, String> {
         self.conn
             .query_row(
                 "SELECT id, project_id, name, kind, path, config, created_at, updated_at

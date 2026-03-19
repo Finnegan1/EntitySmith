@@ -3,4 +3,3 @@
 
 export { SchemaGraphView } from "./SchemaGraphView";
 export { SchemaGraphCanvas } from "./SchemaGraphCanvas";
-export { EntityCatalogView } from "./EntityCatalogView";

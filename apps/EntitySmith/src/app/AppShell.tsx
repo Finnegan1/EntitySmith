@@ -30,7 +30,7 @@ export function AppShell() {
   // Clear selections when switching views.
   useEffect(() => {
     if (activeView !== "sources") setSelectedSource(null);
-    if (activeView !== "proposals") setSelectedProposal(null);
+    if (activeView !== "connections") setSelectedProposal(null);
     if (activeView !== "schema-graph") setSelectedEntityType(null);
   }, [activeView]);
 

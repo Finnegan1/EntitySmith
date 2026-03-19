@@ -1,8 +1,10 @@
 //! IPC commands for Semantic Consolidation (Phase 7 / Stage 4).
 
+use std::collections::HashMap;
 use tauri::{AppHandle, Emitter, State};
 
 use crate::AppState;
+use crate::adapters::adapter_for;
 use crate::domain::{ConsolidationDecision, EntityComparisonData, EntitySimilarityPair};
 
 /// Compute pairwise similarity scores between all source entities.
@@ -200,4 +202,25 @@ pub fn list_consolidation_decisions(
     let store = guard.as_ref().ok_or("No project open")?;
 
     store.list_consolidation_decisions()
+}
+
+/// Return sample rows from a source entity (table / file).
+#[tauri::command]
+pub fn get_sample_rows(
+    source_id: String,
+    entity_name: String,
+    limit: Option<usize>,
+    state: State<'_, AppState>,
+) -> Result<Vec<HashMap<String, Option<String>>>, String> {
+    let guard = state
+        .project
+        .lock()
+        .map_err(|_| "Project lock poisoned".to_string())?;
+    let store = guard.as_ref().ok_or("No project open")?;
+
+    let source = store.get_source(&source_id)?;
+    let adapter = adapter_for(&source.kind, source.path.as_deref())?
+        .ok_or_else(|| format!("No adapter available for source kind {:?}", source.kind))?;
+
+    adapter.sample_rows(&entity_name, limit.unwrap_or(5))
 }

@@ -266,9 +266,9 @@ export interface SourceEntitySummary {
 export type AppView =
   | "project"
   | "sources"
+  | "entities"
   | "schema-graph"
-  | "proposals"
-  | "consolidation"
+  | "connections"
   | "identity"
   | "export"
   | "settings";

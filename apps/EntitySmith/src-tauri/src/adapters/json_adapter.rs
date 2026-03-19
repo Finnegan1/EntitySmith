@@ -53,6 +53,37 @@ impl SourceAdapter for JsonAdapter {
 
         Ok(AdapterProfileResult { entities: vec![entity] })
     }
+
+    fn sample_rows(
+        &self,
+        _entity_name: &str,
+        limit: usize,
+    ) -> Result<Vec<HashMap<String, Option<String>>>, String> {
+        let content = std::fs::read_to_string(&self.path)
+            .map_err(|e| format!("Cannot read JSON file: {e}"))?;
+
+        let records = parse_records(&content)?;
+        let sample = if records.len() > limit {
+            &records[..limit]
+        } else {
+            &records
+        };
+
+        let rows = sample
+            .iter()
+            .map(|rec| {
+                let mut map = HashMap::new();
+                if let Value::Object(obj) = rec {
+                    for (k, v) in obj {
+                        map.insert(k.clone(), scalar_to_string(v));
+                    }
+                }
+                map
+            })
+            .collect();
+
+        Ok(rows)
+    }
 }
 
 // ── Parsing ───────────────────────────────────────────────────────────────────

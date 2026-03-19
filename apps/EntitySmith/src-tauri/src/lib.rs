@@ -77,6 +77,7 @@ pub fn run() {
             commands::consolidation::execute_subtype,
             commands::consolidation::execute_keep_separate,
             commands::consolidation::list_consolidation_decisions,
+            commands::consolidation::get_sample_rows,
             commands::attribute_mapping::list_attribute_mappings,
             commands::attribute_mapping::upsert_attribute_mapping,
             commands::attribute_mapping::delete_attribute_mapping,

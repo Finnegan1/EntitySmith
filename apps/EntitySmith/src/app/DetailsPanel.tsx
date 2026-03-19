@@ -65,7 +65,7 @@ export function DetailsPanel({
       <div className="flex-1 overflow-auto">
         {activeView === "sources" && selectedSource ? (
           <SourceDetail source={selectedSource} />
-        ) : activeView === "proposals" && selectedProposal ? (
+        ) : activeView === "connections" && selectedProposal ? (
           <ProposalDetail proposal={selectedProposal} />
         ) : activeView === "schema-graph" && selectedEntityType ? (
           <EntityTypeDetail et={selectedEntityType} />
@@ -614,8 +614,8 @@ const PANEL_TITLE: Record<AppView, string> = {
   project: "Project Details",
   sources: "Source Details",
   "schema-graph": "Node Details",
-  proposals: "Proposal Details",
-  consolidation: "Consolidation Details",
+  entities: "Entity Details",
+  connections: "Connection Details",
   identity: "Linkage Details",
   export: "Export Preview",
   settings: "Info",
@@ -625,8 +625,8 @@ const PANEL_EMPTY: Record<AppView, string> = {
   project: "Select a project to view details.",
   sources: "Select a source to inspect its details and capabilities.",
   "schema-graph": "Select a node or edge to view details.",
-  proposals: "Select a proposal to view evidence and provenance.",
-  consolidation: "Select a similarity pair to view consolidation details.",
+  entities: "Select an entity pair to view details.",
+  connections: "Select a connection proposal to view evidence and provenance.",
   identity: "Select an entity type to configure identity resolution.",
   export: "Configure export settings to preview the output.",
   settings: "",

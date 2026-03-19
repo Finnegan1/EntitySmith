@@ -49,6 +49,14 @@ pub trait SourceAdapter {
 
     /// Run full profiling and return raw results to be persisted.
     fn profile(&self) -> Result<AdapterProfileResult, String>;
+
+    /// Return a sample of rows from a specific entity (table / file).
+    /// Each row is a map of column name → string value.
+    fn sample_rows(
+        &self,
+        entity_name: &str,
+        limit: usize,
+    ) -> Result<Vec<std::collections::HashMap<String, Option<String>>>, String>;
 }
 
 // ── Factory function ──────────────────────────────────────────────────────────

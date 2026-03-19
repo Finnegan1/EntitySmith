@@ -1,4 +1,5 @@
 use rusqlite::{Connection, OpenFlags, params};
+use std::collections::HashMap;
 use std::time::UNIX_EPOCH;
 
 use super::{
@@ -68,6 +69,54 @@ impl SourceAdapter for SqliteAdapter {
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(AdapterProfileResult { entities })
+    }
+
+    fn sample_rows(
+        &self,
+        entity_name: &str,
+        limit: usize,
+    ) -> Result<Vec<HashMap<String, Option<String>>>, String> {
+        let conn = Connection::open_with_flags(
+            &self.path,
+            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )
+        .map_err(|e| format!("Cannot open SQLite file: {e}"))?;
+
+        let q_table = qi(entity_name);
+        let sql = format!("SELECT * FROM {q_table} LIMIT {limit}");
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| format!("Cannot prepare sample query: {e}"))?;
+
+        let col_names: Vec<String> = stmt
+            .column_names()
+            .iter()
+            .map(|c| c.to_string())
+            .collect();
+
+        let rows = stmt
+            .query_map([], |row| {
+                let mut map = HashMap::new();
+                for (i, name) in col_names.iter().enumerate() {
+                    let val: Option<String> = row
+                        .get::<_, rusqlite::types::Value>(i)
+                        .ok()
+                        .and_then(|v| match v {
+                            rusqlite::types::Value::Null => None,
+                            rusqlite::types::Value::Integer(n) => Some(n.to_string()),
+                            rusqlite::types::Value::Real(n) => Some(n.to_string()),
+                            rusqlite::types::Value::Text(s) => Some(s),
+                            rusqlite::types::Value::Blob(_) => Some("[blob]".to_string()),
+                        });
+                    map.insert(name.clone(), val);
+                }
+                Ok(map)
+            })
+            .map_err(|e| format!("Cannot read sample rows: {e}"))?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        Ok(rows)
     }
 }
 
