@@ -42,7 +42,8 @@
       "mcp___hypothesi_tauri-mcp-server__ipc_execute_command",
       "Bash(cargo build:*)",
       "mcp__shadcn__get_add_command_for_items",
-      "Bash(find /Users/fynnborrmeister/Development/github.com/Finnegan1/knowledge-graph-creator/apps/EntitySmith/src -type f \\\\\\(-name *.tsx -o -name *.ts \\\\\\) ! -path */node_modules/*)"
+      "Bash(find /Users/fynnborrmeister/Development/github.com/Finnegan1/knowledge-graph-creator/apps/EntitySmith/src -type f \\\\\\(-name *.tsx -o -name *.ts \\\\\\) ! -path */node_modules/*)",
+      "Bash(echo \"exit: $?\")"
     ]
   }
 }
